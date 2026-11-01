@@ -1,6 +1,7 @@
 import { and, eq, gte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import "temporal-polyfill/global";
 
 import { relations } from "@/lib/db/relations";
 import { categories as categoriesTable } from "@/lib/db/schema/category";
@@ -100,13 +101,18 @@ export interface CategorySpendDay {
   total: number;
 }
 
-const categoryDayExpression = sql`(${receiptsTable.transactionDateTime} at time zone ${sql.raw(`'${RECEIPT_TIMEZONE}'`)})::date`;
+const categoryDayExpression = sql`(${receiptsTable.transactionDateTime})::date`;
 
 export const spendByCategoryByDay = async (
   ownerId: string,
   days: number
 ): Promise<CategorySpendDay[]> => {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  // Whole calendar days, inclusive of today. The stored value is already the
+  // receipt's local wall clock, so the day is the date part — no timezone
+  // conversion, and no rolling 24-hour window that would start at whatever
+  // time it happens to be now.
+  const today = Temporal.Now.plainDateISO(RECEIPT_TIMEZONE);
+  const start = today.subtract({ days: days - 1 });
 
   return await db
     .select({
@@ -126,7 +132,7 @@ export const spendByCategoryByDay = async (
         eq(receiptsTable.userId, ownerId),
         eq(receiptsTable.status, "done"),
         eq(receiptItemsTable.kind, "product"),
-        gte(receiptsTable.transactionDateTime, since)
+        gte(receiptsTable.transactionDateTime, `${start.toString()} 00:00:00`)
       )
     )
     .groupBy(

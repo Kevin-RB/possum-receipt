@@ -4,9 +4,8 @@ import type {
   ReceiptSelect,
 } from "@/lib/db/schema/receipt";
 import {
-  receiptDateToLocalString,
-  receiptDateTimeToDate,
-  RECEIPT_TIMEZONE,
+  receiptDateTimeToWallClock,
+  wallClockToLocalString,
 } from "@/lib/receipt/datetime";
 
 const receiptFlatWriteKeys = [
@@ -28,15 +27,14 @@ export type ReceiptFlatWrite = Pick<
 >;
 
 const parseTransactionDateTime = (
-  datetime: string | undefined,
-  timezone: string
-): Date | null => {
+  datetime: string | undefined
+): string | null => {
   if (!datetime) {
     return null;
   }
 
   try {
-    return receiptDateTimeToDate(datetime, timezone);
+    return receiptDateTimeToWallClock(datetime);
   } catch {
     return null;
   }
@@ -52,10 +50,7 @@ const parseTransactionDateTime = (
  * replace a bad extraction — would keep every field the new parse happened to
  * omit.
  */
-export const receiptToFlat = (
-  nested: ReceiptNested,
-  timezone = RECEIPT_TIMEZONE
-): ReceiptFlatWrite => ({
+export const receiptToFlat = (nested: ReceiptNested): ReceiptFlatWrite => ({
   gst: nested.totals.gst ?? null,
   merchantAbn: nested.merchant.abn ?? null,
   merchantAddress: nested.merchant.address ?? null,
@@ -65,16 +60,10 @@ export const receiptToFlat = (
   receiptNumber: nested.transaction.receiptNumber ?? null,
   subtotal: nested.totals.subtotal ?? null,
   total: nested.totals.total,
-  transactionDateTime: parseTransactionDateTime(
-    nested.transaction.datetime,
-    timezone
-  ),
+  transactionDateTime: parseTransactionDateTime(nested.transaction.datetime),
 });
 
-export const receiptToNested = (
-  receipt: ReceiptSelect,
-  timezone = RECEIPT_TIMEZONE
-): ReceiptNested => {
+export const receiptToNested = (receipt: ReceiptSelect): ReceiptNested => {
   const method =
     receipt.paymentMethod === "cash" || receipt.paymentMethod === "card"
       ? receipt.paymentMethod
@@ -95,7 +84,7 @@ export const receiptToNested = (
     },
     transaction: {
       datetime: receipt.transactionDateTime
-        ? receiptDateToLocalString(receipt.transactionDateTime, timezone)
+        ? wallClockToLocalString(receipt.transactionDateTime)
         : undefined,
       receiptNumber: receipt.receiptNumber ?? undefined,
     },

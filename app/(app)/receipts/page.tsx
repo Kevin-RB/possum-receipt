@@ -9,6 +9,7 @@ import { requireSession } from "@/lib/auth/dal";
 import { listReceipts } from "@/lib/db";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
 import { receiptSelectSchema } from "@/lib/db/schema/receipt";
+import { instantToWallClock } from "@/lib/receipt/datetime";
 
 const normalizeReceipt = (receipt: ReceiptSelect): ReceiptTable => ({
   hasIntegrityWarning: receipt.hasIntegrityWarning,
@@ -17,7 +18,8 @@ const normalizeReceipt = (receipt: ReceiptSelect): ReceiptTable => ({
   paymentMethod: receipt.paymentMethod ?? "-",
   status: receipt.status as ReceiptTable["status"],
   total: receipt.total ?? 0,
-  transactionDateTime: receipt.transactionDateTime ?? receipt.createdAt,
+  transactionDateTime:
+    receipt.transactionDateTime ?? instantToWallClock(receipt.createdAt),
 });
 
 const getReceiptData = async (ownerId: string): Promise<ReceiptTable[]> => {

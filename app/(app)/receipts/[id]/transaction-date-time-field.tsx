@@ -12,21 +12,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  RECEIPT_TIMEZONE,
-  receiptDateTimeToDate,
+  formatReceiptDateTime,
   receiptDayToLocalString,
   receiptLocalStringToDay,
   receiptLocalStringToTime,
   receiptToday,
 } from "@/lib/receipt/datetime";
-
-// Formatted in the receipt's own timezone, since the stored value is the
-// wall-clock time printed on the receipt rather than the browser's.
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-AU", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: RECEIPT_TIMEZONE,
-});
 
 interface TransactionDateTimeFieldProps {
   onValueChange: (value: string) => void;
@@ -51,9 +42,7 @@ export const TransactionDateTimeField = ({
   const day = receiptLocalStringToDay(value);
   const time = receiptLocalStringToTime(value);
 
-  const label = value
-    ? DATE_TIME_FORMATTER.format(receiptDateTimeToDate(value))
-    : "Select a date";
+  const label = value ? formatReceiptDateTime(value) : "Select a date";
 
   return (
     <div className="flex flex-col gap-2">

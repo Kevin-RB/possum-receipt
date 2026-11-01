@@ -15,9 +15,12 @@ import { simulateBrowserWithPolyfilledTemporal } from "@/test/polyfilled-tempora
 
 const TODAY = Temporal.PlainDate.from("2026-08-19");
 
+const at = (year: number, monthIndex: number, day: number): string =>
+  `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}T12:00:00`;
+
 const receipt = (overrides: Partial<SpendingInput> = {}): SpendingInput => ({
   total: 10,
-  transactionDateTime: new Date(2026, 7, 1),
+  transactionDateTime: at(2026, 7, 1),
   ...overrides,
 });
 
@@ -26,16 +29,11 @@ const merchantReceipt = (
 ): MerchantSpendingInput => ({
   merchantName: "Woolworths",
   total: 10,
-  transactionDateTime: new Date(2026, 7, 1),
+  transactionDateTime: at(2026, 7, 1),
   ...overrides,
 });
 
-const dayKey = (date: Date): string =>
-  date
-    .toTemporalInstant()
-    .toZonedDateTimeISO(Temporal.Now.timeZoneId())
-    .toPlainDate()
-    .toString();
+const dayKey = (value: string): string => value.slice(0, 10);
 
 const totalFor = (
   result: ReturnType<typeof sumDailySpending>,
@@ -74,16 +72,16 @@ describe(sumDailySpending, () => {
   it("sums totals of receipts into their transaction day", () => {
     const result = sumDailySpending(
       [
-        receipt({ total: 12.34, transactionDateTime: new Date(2026, 7, 3) }),
-        receipt({ total: 20, transactionDateTime: new Date(2026, 7, 3) }),
-        receipt({ total: 5, transactionDateTime: new Date(2026, 7, 1) }),
+        receipt({ total: 12.34, transactionDateTime: at(2026, 7, 3) }),
+        receipt({ total: 20, transactionDateTime: at(2026, 7, 3) }),
+        receipt({ total: 5, transactionDateTime: at(2026, 7, 1) }),
       ],
       30,
       TODAY
     );
 
-    expect(totalFor(result, dayKey(new Date(2026, 7, 3)))).toBe(32.34);
-    expect(totalFor(result, dayKey(new Date(2026, 7, 1)))).toBe(5);
+    expect(totalFor(result, dayKey(at(2026, 7, 3)))).toBe(32.34);
+    expect(totalFor(result, dayKey(at(2026, 7, 1)))).toBe(5);
   });
 
   it("skips receipts without a total or transaction datetime", () => {
@@ -99,8 +97,8 @@ describe(sumDailySpending, () => {
   it("ignores receipts outside the day window", () => {
     const result = sumDailySpending(
       [
-        receipt({ transactionDateTime: new Date(2026, 6, 20) }),
-        receipt({ transactionDateTime: new Date(2026, 8, 1) }),
+        receipt({ transactionDateTime: at(2026, 6, 20) }),
+        receipt({ transactionDateTime: at(2026, 8, 1) }),
       ],
       30,
       TODAY
@@ -112,14 +110,14 @@ describe(sumDailySpending, () => {
   it("rounds totals to cents", () => {
     const result = sumDailySpending(
       [
-        receipt({ total: 0.1, transactionDateTime: new Date(2026, 7, 1) }),
-        receipt({ total: 0.2, transactionDateTime: new Date(2026, 7, 1) }),
+        receipt({ total: 0.1, transactionDateTime: at(2026, 7, 1) }),
+        receipt({ total: 0.2, transactionDateTime: at(2026, 7, 1) }),
       ],
       30,
       TODAY
     );
 
-    expect(totalFor(result, dayKey(new Date(2026, 7, 1)))).toBe(0.3);
+    expect(totalFor(result, dayKey(at(2026, 7, 1)))).toBe(0.3);
   });
 });
 
@@ -215,11 +213,11 @@ describe("with only the polyfill installed (older browsers)", () => {
     expect(windowDays(TODAY, 2)).toBe(62);
 
     const result = sumDailySpending(
-      [receipt({ total: 12.34, transactionDateTime: new Date(2026, 7, 3) })],
+      [receipt({ total: 12.34, transactionDateTime: at(2026, 7, 3) })],
       30,
       TODAY
     );
 
-    expect(totalFor(result, dayKey(new Date(2026, 7, 3)))).toBe(12.34);
+    expect(totalFor(result, dayKey(at(2026, 7, 3)))).toBe(12.34);
   });
 });

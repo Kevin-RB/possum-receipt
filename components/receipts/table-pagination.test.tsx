@@ -28,7 +28,7 @@ const receipt = (index: number): ReceiptTable => ({
   paymentMethod: "Visa",
   status: "done",
   total: index,
-  transactionDateTime: new Date(2026, 0, 1),
+  transactionDateTime: "2026-01-01T12:00:00",
 });
 
 const realtimeValue: ReceiptsRealtimeValue = {

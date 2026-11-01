@@ -1,6 +1,7 @@
 "use client";
 
 import { createColumnHelper } from "@tanstack/react-table";
+import type { SortFn } from "@tanstack/react-table";
 import {
   BadgeAlert,
   Eye,
@@ -36,7 +37,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
-import { formatReceiptDateTime } from "@/lib/receipt/datetime";
+import {
+  compareWallClocks,
+  formatReceiptDateTime,
+} from "@/lib/receipt/datetime";
 
 export const receiptTableSchema = z.object({
   hasIntegrityWarning: z.boolean(),
@@ -45,7 +49,7 @@ export const receiptTableSchema = z.object({
   paymentMethod: z.string(),
   status: z.enum(["uploading", "pending", "processing", "done", "error"]),
   total: z.number(),
-  transactionDateTime: z.date(),
+  transactionDateTime: z.string(),
 });
 
 export type ReceiptTable = z.infer<typeof receiptTableSchema>;
@@ -161,6 +165,25 @@ const RowActions = ({
   );
 };
 
+/**
+ * Sorts the column by the wall clock's value, not its text.
+ *
+ * The built-in `datetime` sort compares anything that is not a `Date` as a
+ * string, which is chronological only while every value shares one format: a
+ * `T`-separated value sorts after every space-separated one on the same day,
+ * because `" "` < `"T"`. Parsing makes the order independent of the separator,
+ * so a value from a second producer cannot land at the wrong end of its day.
+ */
+const byWallClock: SortFn<DataTableFeatures, ReceiptTable> = (
+  rowA,
+  rowB,
+  columnId
+) =>
+  compareWallClocks(
+    String(rowA.getValue(columnId)),
+    String(rowB.getValue(columnId))
+  );
+
 export const receiptColumns = columnHelper.columns([
   columnHelper.accessor("status", {
     cell: ({ row }) => (
@@ -174,8 +197,9 @@ export const receiptColumns = columnHelper.columns([
     // Left-aligned like every other cell: the column is a fixed share of the
     // table, so its text starts at a stable edge instead of drifting with the
     // width of the longest date on the page.
-    // The `Date` goes straight to the formatter: `formatReceiptDateTime`
-    // explains why a `Temporal.Instant` here is a hydration error.
+    // The value is the receipt's own wall clock, so the formatter renders it
+    // as written: `formatReceiptDateTime` explains why it builds a `Date`
+    // internally rather than handing a Temporal object to `Intl`.
     cell: ({ row }) => (
       <div className="truncate">
         {formatReceiptDateTime(row.original.transactionDateTime)}
@@ -184,7 +208,7 @@ export const receiptColumns = columnHelper.columns([
     filterFn: dateRangeFilterFn,
     header: "Date",
     meta: { width: "34%" },
-    sortFn: "datetime",
+    sortFn: byWallClock,
   }),
   columnHelper.accessor("merchantName", {
     cell: ({ row }) => (
