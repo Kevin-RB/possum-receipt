@@ -13,6 +13,21 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+## Dependencies
+
+Record a blocker as a **native issue dependency**, not only as prose in the body. GitHub then shows it in the sidebar, and an agent reading the issue sees it without parsing the description.
+
+```sh
+# The blocking issue's database id, not its number.
+blocker_id=$(gh api repos/{owner}/{repo}/issues/<blocker> --jq .id)
+gh api -X POST repos/{owner}/{repo}/issues/<blocked>/dependencies/blocked_by \
+  -F issue_id="$blocker_id"
+```
+
+Read them back with `gh issue view <n> --json blockedBy`, or the blocking side with `gh api repos/{owner}/{repo}/issues/<n>/dependencies/blocking`.
+
+Keep the _reason_ for the block in the body — the relationship belongs to GitHub, the explanation belongs to the issue.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
