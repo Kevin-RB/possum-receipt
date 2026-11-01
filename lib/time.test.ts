@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_TIMEZONE, resolveToday, resolveTimezone } from "@/lib/time";
+import {
+  DEFAULT_TIMEZONE,
+  resolveToday,
+  resolveTimezone,
+  weekdayOf,
+} from "@/lib/time";
 
 /** The calendar date at an instant in a zone, read independently of the app. */
 const isoDayIn = (instant: number, timezone: string) =>
@@ -71,5 +76,24 @@ describe(resolveToday, () => {
     expect(resolveToday("Not/AZone").toString()).toBe(
       isoDayIn(Date.now(), DEFAULT_TIMEZONE)
     );
+  });
+});
+
+describe(weekdayOf, () => {
+  /**
+   * The prompt states the weekday because a model asked to work it out from an
+   * ISO date gets it wrong: with only the date, the local model answered
+   * "Thursday, November 1, 2026" two runs in three, and copied the weekday out
+   * of the prompt's own format example. Stating it left 6 of 6 correct.
+   */
+  it("names the weekday of a plain date, whatever the runtime's zone", () => {
+    expect(weekdayOf(Temporal.PlainDate.from("2026-11-01"))).toBe("Sunday");
+    expect(weekdayOf(Temporal.PlainDate.from("2026-10-07"))).toBe("Wednesday");
+  });
+
+  it("does not shift the day for a runtime west of UTC", () => {
+    // The carrier is a `Date` at UTC holding the plain date's components, so a
+    // runtime whose own midnight falls earlier cannot read back the day before.
+    expect(weekdayOf(Temporal.PlainDate.from("2026-01-01"))).toBe("Thursday");
   });
 });

@@ -2,6 +2,7 @@ import { ToolLoopAgent } from "ai";
 
 import { CHAT_MODEL, lmstudio } from "@/lib/ai/provider";
 import { listCategoryOptions } from "@/lib/db";
+import { weekdayOf } from "@/lib/time";
 
 import { buildChatTools } from "./tools";
 
@@ -21,7 +22,13 @@ export const buildInstructions = (
   // `today` and `timezone` are the viewer's clock, resolved by the route and
   // passed in: the prompt is pure, so a test can state its date. A receipt's
   // own day is stored data and never comes from here.
+  //
+  // The weekday is stated rather than left to be derived. Asked for the weekday
+  // of a bare ISO date, the local model answered "Thursday, November 1, 2026" —
+  // and, when the prompt's format example was in view, copied "Wednesday" out
+  // of that example instead. Given the name, it repeats it.
   const todayISO = today.toString();
+  const weekday = weekdayOf(today);
   // The hierarchy is kept — without it the model invents which subcategories
   // belong to a top-level category, and attributes them wrongly — but never as
   // a `Parent > Child` path, which it echoed verbatim into its prose.
@@ -37,12 +44,13 @@ export const buildInstructions = (
     )
     .join("; ");
 
-  return `You are a personal spending assistant for a receipt-tracking app. Today is ${todayISO} (${timezone}).
+  return `You are a personal spending assistant for a receipt-tracking app. Today is ${weekday}, ${todayISO} (${timezone}).
 
 You answer questions about the user's own receipts by calling the provided tools.
 
 Rules:
 - Always get data from the tools. Never invent amounts, merchants, dates, or items.
+- Today's weekday and date are the ones stated above. Use them as given; never work out or guess either, and never take a weekday from an example below.
 - Tool date arguments are inclusive ISO dates (YYYY-MM-DD). Convert relative periods such as "last month" or "the last 2 months" into dates using today's date.
 - Tool results carry both a date (ISO, YYYY-MM-DD) and a dateLabel (for example "Wednesday, 12 August 2026"). When you mention a date in prose, use the dateLabel; never repeat the ISO form.
 - All amounts are Australian dollars.

@@ -54,6 +54,24 @@ export const resolveTimezone = (...candidates: unknown[]): string =>
 export const resolveToday = (...candidates: unknown[]): Temporal.PlainDate =>
   Temporal.Now.plainDateISO(resolveTimezone(...candidates));
 
+const WEEKDAY_FORMATTER = new Intl.DateTimeFormat("en-AU", {
+  timeZone: "UTC",
+  weekday: "long",
+});
+
+/**
+ * The day's weekday name — "Sunday".
+ *
+ * Built as a `Date` at UTC holding the plain date's components and read back in
+ * UTC, the same carrier `lib/receipt/datetime.ts` uses for receipt dates:
+ * handing a `Temporal` object to `Intl` is not portable, and reading it in the
+ * runtime's own zone would shift the day for anyone west of it.
+ */
+export const weekdayOf = (today: Temporal.PlainDate): string =>
+  WEEKDAY_FORMATTER.format(
+    new Date(Date.UTC(today.year, today.month - 1, today.day))
+  );
+
 /**
  * The zone the browser is running in — the viewer's own clock, asked directly.
  *

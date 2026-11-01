@@ -22,11 +22,16 @@ const count = (haystack: string, needle: string) =>
 const instructions = buildInstructions(CATEGORIES, TODAY, TIMEZONE);
 
 describe(buildInstructions, () => {
-  it("states the viewer's own date and zone", () => {
-    // The regression this pins: the date was the server's, read in a hardcoded
-    // Brisbane, so a viewer west of it was told tomorrow's date and answered
-    // "spend today" from a day that had barely started for them.
-    expect(instructions).toContain("Today is 2026-10-07 (America/Bogota)");
+  it("states the viewer's own date, weekday and zone", () => {
+    // The regression this pins, twice over. The date was the server's, read in
+    // a hardcoded Brisbane, so a viewer west of it was told tomorrow's date and
+    // answered "spend today" from a day that had barely started for them. The
+    // weekday was not stated at all, and the local model answered "Thursday,
+    // November 1, 2026" (a Sunday) — or copied "Wednesday" out of the format
+    // example below.
+    expect(instructions).toContain(
+      "Today is Wednesday, 2026-10-07 (America/Bogota)"
+    );
   });
 
   it("leaks no tool-call markup into the prompt", () => {
