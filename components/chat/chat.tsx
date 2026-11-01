@@ -35,6 +35,7 @@ import type {
   AskUserToolPart,
   ChatUIMessage,
 } from "@/lib/chat/tools";
+import { browserTimezone } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { ChatMessage } from "./chat-message";
@@ -107,9 +108,7 @@ export const Chat = ({ firstName }: { firstName: string }) => {
       // The browser is the clock in front of the reader, and a function is read
       // per request: the edge's `tz` cookie is only a copy taken on the last
       // page load, and this is where the viewer actually is now.
-      body: () => ({
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      }),
+      body: () => ({ timezone: browserTimezone() }),
     }),
   });
 

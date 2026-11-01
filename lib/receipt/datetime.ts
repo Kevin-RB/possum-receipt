@@ -1,6 +1,13 @@
 import "temporal-polyfill/global";
+import { DEFAULT_TIMEZONE } from "@/lib/time";
 
-export const RECEIPT_TIMEZONE = "Australia/Brisbane";
+/**
+ * The zone a UTC designator is interpreted in — the app's home zone, which is
+ * also what "today" falls back to when no viewer is behind a request
+ * (ADR-0016). One literal with two names: this one answers "which zone did
+ * this value's printer mean", that one "what zone is home".
+ */
+export const RECEIPT_TIMEZONE = DEFAULT_TIMEZONE;
 
 const pad = (value: number) => value.toString().padStart(2, "0");
 

@@ -39,6 +39,7 @@ Every candidate is taken as `unknown` and validated by `Temporal.Now.plainDateIS
 - The charts' windows and the SQL window behind them come from the same resolved day. A query window and a chart window that disagreed would leave the rightmost bar without its data.
 - `user.timezone` is nullable: Better Auth writes it, and a row created before the column existed has no zone. `resolveTimezone` treats both the same.
 - No client component calls `Temporal.Now`. The remaining calls are in `lib/time.ts` itself (the resolution) and in the fixture script, which builds `created_at` instants.
+- `RECEIPT_TIMEZONE` is now defined as `DEFAULT_TIMEZONE`: one literal, two names, because the home zone serves both "which zone did this value's printer mean" and "what zone is today's fallback". `browserTimezone()` names the `Intl` expression the two browser call sites share.
 - `proxy.ts` imports `lib/time.ts` for the cookie name, which pulls the Temporal polyfill into the middleware bundle. Accepted for one source of truth; nothing else in `proxy.ts` needs a zone.
 
 ## Related

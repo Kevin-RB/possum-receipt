@@ -141,6 +141,28 @@ const ReceiptCard = ({
  */
 export const PAGE_SIZE = 10;
 
+/**
+ * The date filter's calendar bounds, from the viewer's day.
+ *
+ * A calendar day is carried as a `Date` at the runtime's local midnight holding
+ * those year/month/day components — never the instant the day begins — so the
+ * cells and the bound compare on one frame of reference.
+ *
+ * `today` is resolved on the server and passed in: a client component that read
+ * its own clock is server-rendered in the server's zone, so the bound and the
+ * opening month would not match the HTML React hydrates.
+ */
+export const calendarBounds = (today: string) => {
+  const day = Temporal.PlainDate.from(today);
+
+  return {
+    latestDay: plainDateToLocalDay(day),
+    previousMonthStart: plainDateToLocalDay(
+      day.with({ day: 1 }).subtract({ months: 1 })
+    ),
+  };
+};
+
 export const DataTable = ({ columns, data, today }: DataTableProps) => {
   const table = useTable({
     // The page belongs to the reader, not to the data: the page re-renders
@@ -162,20 +184,11 @@ export const DataTable = ({ columns, data, today }: DataTableProps) => {
   const dateColumn = table.getColumn("transactionDateTime");
   const dateRange =
     (dateColumn?.getFilterValue() as DateRange | undefined) ?? undefined;
-  // The viewer's day as the calendar carries one. Resolved on the server: a
-  // client component that read its own clock is server-rendered in the
-  // server's zone, so the ceiling and the default month would not match the
-  // HTML React hydrates.
-  const { latestDay, previousMonthStart } = useMemo(() => {
-    const day = Temporal.PlainDate.from(today);
-
-    return {
-      latestDay: plainDateToLocalDay(day),
-      previousMonthStart: plainDateToLocalDay(
-        day.with({ day: 1 }).subtract({ months: 1 })
-      ),
-    };
-  }, [today]);
+  // The viewer's day as the calendar carries one, resolved on the server.
+  const { latestDay, previousMonthStart } = useMemo(
+    () => calendarBounds(today),
+    [today]
+  );
 
   const defaultMonth = dateRange?.from ?? previousMonthStart;
 

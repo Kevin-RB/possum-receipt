@@ -24,6 +24,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { signUp } from "@/lib/auth-client";
+import { browserTimezone } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const signUpSchema = z.object({
@@ -56,7 +57,7 @@ export const SignupForm = ({
     // party that knows it at this point.
     const { error } = await signUp.email({
       ...values,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timezone: browserTimezone(),
     });
     if (error) {
       setError("root", { message: error.message ?? "Failed to sign up" });
