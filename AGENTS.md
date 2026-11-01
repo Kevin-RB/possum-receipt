@@ -30,6 +30,8 @@ Use the repo-specific skill docs for workflows:
 - `docs/agents/triage-labels.md` — canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`).
 - `docs/agents/domain.md` — how to consume `CONTEXT.md` and `docs/adr/`.
 
+When a plan, spec, or conversation becomes issues, load the **`to-tickets`** skill. It owns the ticket shape and requires each blocking edge to be a native issue dependency — a `## Blocked by` line in the body is not enough, and must not be added when the native edge exists.
+
 This is a **single-context** repo: read `CONTEXT.md` at the root and `docs/adr/` for decisions. (The multi-context example in `docs/agents/domain.md` is a template; this repo has no `apps/` or `packages/` hierarchy.)
 
 ### MCP servers
