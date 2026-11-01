@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { buildFixture } from "@/lib/db/fixture";
-import { receiptDateToISODateString } from "@/lib/receipt/datetime";
+import { wallClockToISODate } from "@/lib/receipt/datetime";
 import { reconcile } from "@/lib/receipt/integrity";
 
 const AS_OF = Temporal.PlainDate.from("2026-10-17");
@@ -53,7 +53,7 @@ const LEAF_SLUGS = new Set([
 
 const isoDates = () =>
   fixture.receipts.map((receipt) =>
-    receiptDateToISODateString(receipt.transactionDateTime)
+    wallClockToISODate(receipt.transactionDateTime)
   );
 
 describe(buildFixture, () => {

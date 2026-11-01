@@ -1,4 +1,5 @@
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
+import { wallClockToISODate } from "@/lib/receipt/datetime";
 import "temporal-polyfill/global";
 
 export type SpendingInput = Pick<
@@ -28,18 +29,16 @@ export const sumDailySpending = (
   days: number,
   today = Temporal.Now.plainDateISO()
 ): SpendingBucket[] => {
-  const timeZoneId = Temporal.Now.timeZoneId();
   const totals = new Map<string, number>();
 
   for (const receipt of receipts) {
     if (receipt.total === null || receipt.transactionDateTime === null) {
       continue;
     }
-    const key = receipt.transactionDateTime
-      .toTemporalInstant()
-      .toZonedDateTimeISO(timeZoneId)
-      .toPlainDate()
-      .toString();
+    // The stored value is the receipt's own wall clock, so the day is its date
+    // part. Converting an instant in the browser's zone is what used to put a
+    // 07:00 purchase on the previous day for anyone west of Brisbane.
+    const key = wallClockToISODate(receipt.transactionDateTime);
     totals.set(key, (totals.get(key) ?? 0) + receipt.total);
   }
 

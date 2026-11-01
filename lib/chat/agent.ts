@@ -2,10 +2,7 @@ import { ToolLoopAgent } from "ai";
 
 import { CHAT_MODEL, lmstudio } from "@/lib/ai/provider";
 import { listCategoryOptions } from "@/lib/db";
-import {
-  RECEIPT_TIMEZONE,
-  receiptDateToISODateString,
-} from "@/lib/receipt/datetime";
+import { RECEIPT_TIMEZONE } from "@/lib/receipt/datetime";
 
 import { buildChatTools } from "./tools";
 
@@ -20,7 +17,9 @@ export const MAX_STEPS = 8;
 export const buildInstructions = (
   categories: { name: string; parentName: string | null }[]
 ): string => {
-  const today = receiptDateToISODateString(new Date());
+  // "What day is it now" is a clock reading, not a receipt date: the receipt's
+  // own day is stored data. #192 replaces this with the viewer's timezone.
+  const today = Temporal.Now.plainDateISO(RECEIPT_TIMEZONE).toString();
   // The hierarchy is kept — without it the model invents which subcategories
   // belong to a top-level category, and attributes them wrongly — but never as
   // a `Parent > Child` path, which it echoed verbatim into its prose.

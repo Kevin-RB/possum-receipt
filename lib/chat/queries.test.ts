@@ -33,11 +33,9 @@ vi.mock(import("@/lib/db"), async (importOriginal) => {
   };
 });
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 const row = (overrides: Record<string, unknown> = {}) => ({
   category: "dairy-eggs",
-  date: new Date("2026-05-17T04:00:00Z"),
+  date: "2026-05-17 14:00:00",
   item: "Greek Yoghurt 1kg",
   kind: "product",
   lineTotal: 6.5,
@@ -47,21 +45,18 @@ const row = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("receipt day bounds", () => {
-  it("returns local midnight and the next local midnight", () => {
-    const start = startOfReceiptDay("2026-08-25");
-    const end = startOfNextReceiptDay("2026-08-25");
-
-    // Australia/Brisbane is UTC+10 year-round (no daylight saving).
-    expect(start.toISOString()).toBe("2026-08-24T14:00:00.000Z");
-    expect(end.getTime() - start.getTime()).toBe(DAY_MS);
+  it("returns the start of the day and of the next day", () => {
+    expect(startOfReceiptDay("2026-08-25")).toBe("2026-08-25 00:00:00");
+    expect(startOfNextReceiptDay("2026-08-25")).toBe("2026-08-26 00:00:00");
   });
 
   it("spans across a month boundary", () => {
-    const start = startOfReceiptDay("2026-08-31");
-    const end = startOfNextReceiptDay("2026-08-31");
+    expect(startOfReceiptDay("2026-08-31")).toBe("2026-08-31 00:00:00");
+    expect(startOfNextReceiptDay("2026-08-31")).toBe("2026-09-01 00:00:00");
+  });
 
-    expect(end.toISOString()).toBe("2026-08-31T14:00:00.000Z");
-    expect(end.getTime() - start.getTime()).toBe(DAY_MS);
+  it("spans across a year boundary", () => {
+    expect(startOfNextReceiptDay("2026-12-31")).toBe("2027-01-01 00:00:00");
   });
 });
 

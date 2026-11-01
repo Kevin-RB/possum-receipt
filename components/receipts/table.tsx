@@ -38,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatReceiptShortDate } from "@/lib/receipt/datetime";
 
 interface DataTableProps {
   columns: ColumnDef<DataTableFeatures, ReceiptTable>[];
@@ -80,11 +81,6 @@ const rangeDateFormatter = new Intl.DateTimeFormat("en-AU", {
   year: "numeric",
 });
 
-const cardDateFormatter = new Intl.DateTimeFormat("en-AU", {
-  dateStyle: "medium",
-  timeZone: "Australia/Brisbane",
-});
-
 const currencyFormatter = new Intl.NumberFormat("en-AU", {
   currency: "AUD",
   style: "currency",
@@ -117,7 +113,7 @@ const ReceiptCard = ({
       </div>
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground text-xs">
-          {cardDateFormatter.format(receipt.transactionDateTime)}
+          {formatReceiptShortDate(receipt.transactionDateTime)}
         </span>
         {receipt.hasIntegrityWarning ? (
           <BadgeAlert

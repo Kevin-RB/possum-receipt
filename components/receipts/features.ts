@@ -9,7 +9,6 @@ import {
   rowSelectionFeature,
   rowSortingFeature,
   sortFn_alphanumeric,
-  sortFn_datetime,
   tableFeatures,
 } from "@tanstack/react-table";
 
@@ -39,7 +38,6 @@ export const features = tableFeatures({
   rowSortingFeature,
   sortFns: {
     alphanumeric: sortFn_alphanumeric,
-    datetime: sortFn_datetime,
   },
   sortedRowModel: createSortedRowModel(),
 });

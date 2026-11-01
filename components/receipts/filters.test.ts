@@ -9,19 +9,18 @@ const filter = (value: unknown, range: DateRangeFilterValue) =>
 
 describe(dateRangeFilterFn, () => {
   it("keeps all rows when the range is empty", () => {
-    expect(filter(new Date("2026-08-01T02:00:00Z"), {})).toBeTruthy();
+    expect(filter("2026-08-01 12:00:00", {})).toBeTruthy();
   });
 
-  it("matches on the Brisbane calendar day", () => {
-    // 2026-07-31T14:30Z is 2026-08-01 00:30 Brisbane
-    const row = new Date("2026-07-31T14:30:00Z");
+  it("matches on the receipt's printed day", () => {
+    // The stored value is the wall clock printed on the receipt.
+    const row = "2026-08-01 00:30:00";
     expect(filter(row, { from: new Date("2026-08-01") })).toBeTruthy();
     expect(filter(row, { from: new Date("2026-08-02") })).toBeFalsy();
   });
 
   it("respects an inclusive to boundary", () => {
-    // 2026-08-05T06:00Z is 16:00 Brisbane on Aug 5
-    const row = new Date("2026-08-05T06:00:00Z");
+    const row = "2026-08-05 16:00:00";
     expect(
       filter(row, { from: new Date("2026-08-01"), to: new Date("2026-08-05") })
     ).toBeTruthy();
@@ -39,7 +38,7 @@ describe("without the Temporal global (older browsers)", () => {
   simulateBrowserWithPolyfilledTemporal();
 
   it("still filters by date range", () => {
-    const row = new Date("2026-07-31T14:30:00Z");
+    const row = "2026-08-01 00:30:00";
     expect(filter(row, { from: new Date("2026-08-01") })).toBeTruthy();
     expect(filter(row, { from: new Date("2026-08-02") })).toBeFalsy();
   });

@@ -88,9 +88,15 @@ export const receipts = snakeCase.table(
     status: text().$type<ProcessingStatus>().notNull().default("pending"),
     subtotal: numeric({ mode: "number", precision: 10, scale: 2 }),
     total: numeric({ mode: "number", precision: 10, scale: 2 }),
+    /**
+     * The local date and time printed on the receipt — a wall clock, not an
+     * instant. Stored without a time zone and read as the raw Postgres text
+     * (`2026-10-07 20:30:00`), which `lib/receipt/datetime.ts` parses with
+     * `Temporal`. `mode: "date"` would have pg rebuild a `Date` in the Node
+     * process's own zone, reintroducing the conversion this column avoids.
+     */
     transactionDateTime: timestamp("transaction_datetime", {
-      mode: "date",
-      withTimezone: true,
+      mode: "string",
     }),
     transcript: text(),
     userId: text()
