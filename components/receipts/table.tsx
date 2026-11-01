@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { DateRange } from "react-day-picker";
 
 import type { ReceiptTable } from "@/components/receipts/columns";
@@ -38,11 +38,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatReceiptShortDate } from "@/lib/receipt/datetime";
+import {
+  formatReceiptShortDate,
+  plainDateToLocalDay,
+} from "@/lib/receipt/datetime";
 
 interface DataTableProps {
   columns: ColumnDef<DataTableFeatures, ReceiptTable>[];
   data: ReceiptTable[];
+  /** The viewer's day, resolved on the server — the date filter's ceiling. */
+  today: string;
 }
 
 const SortIcon = ({ sorted }: { sorted: false | "asc" | "desc" }) => {
@@ -129,14 +134,6 @@ const ReceiptCard = ({
   </li>
 );
 
-export const getToday = () =>
-  new Date(Temporal.Now.instant().epochMilliseconds);
-
-export const getStartOfPreviousMonth = () => {
-  const previousMonth = Temporal.Now.plainDateISO().subtract({ months: 1 });
-  return new Date(previousMonth.year, previousMonth.month - 1, 1);
-};
-
 /**
  * How many receipts one page holds. Every receipt the owner has is already
  * loaded for filtering and sorting, so this is a rendering window, not a query
@@ -144,7 +141,7 @@ export const getStartOfPreviousMonth = () => {
  */
 export const PAGE_SIZE = 10;
 
-export const DataTable = ({ columns, data }: DataTableProps) => {
+export const DataTable = ({ columns, data, today }: DataTableProps) => {
   const table = useTable({
     // The page belongs to the reader, not to the data: the page re-renders
     // whenever a receipt finishes (`router.refresh()` in
@@ -165,8 +162,22 @@ export const DataTable = ({ columns, data }: DataTableProps) => {
   const dateColumn = table.getColumn("transactionDateTime");
   const dateRange =
     (dateColumn?.getFilterValue() as DateRange | undefined) ?? undefined;
-  const today = getToday();
-  const defaultMonth = dateRange?.from ?? getStartOfPreviousMonth();
+  // The viewer's day as the calendar carries one. Resolved on the server: a
+  // client component that read its own clock is server-rendered in the
+  // server's zone, so the ceiling and the default month would not match the
+  // HTML React hydrates.
+  const { latestDay, previousMonthStart } = useMemo(() => {
+    const day = Temporal.PlainDate.from(today);
+
+    return {
+      latestDay: plainDateToLocalDay(day),
+      previousMonthStart: plainDateToLocalDay(
+        day.with({ day: 1 }).subtract({ months: 1 })
+      ),
+    };
+  }, [today]);
+
+  const defaultMonth = dateRange?.from ?? previousMonthStart;
 
   // With `autoResetPageIndex` off, nothing rescues the page when the list
   // shrinks under it — a delete that empties the last page, for instance.
@@ -301,7 +312,7 @@ export const DataTable = ({ columns, data }: DataTableProps) => {
           <PopoverContent align="start" className="w-auto">
             <Calendar
               defaultMonth={defaultMonth}
-              disabled={{ after: today }}
+              disabled={{ after: latestDay }}
               mode="range"
               numberOfMonths={2}
               onSelect={(next) => setDateRangeFilter(next ?? {})}

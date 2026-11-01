@@ -2,7 +2,31 @@ import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { TIMEZONE_COOKIE } from "@/lib/time";
+
 const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up"]);
+
+/**
+ * Carries the edge's `cf-timezone` header into a cookie server components can
+ * read, on every page response including the redirect to sign-in.
+ *
+ * The cookie is transport, not a preference: rewritten from the header on each
+ * request, so it follows the viewer when they travel. It is not a setting and
+ * has no UI. Absent in local development, where nothing sets the header — the
+ * account's stored zone covers that.
+ */
+const withViewerTimezone = (request: NextRequest, response: NextResponse) => {
+  const timezone = request.headers.get("cf-timezone");
+
+  if (timezone) {
+    response.cookies.set(TIMEZONE_COOKIE, timezone, {
+      path: "/",
+      sameSite: "lax",
+    });
+  }
+
+  return response;
+};
 
 export const proxy = (request: NextRequest) => {
   // Optimistic check only — the real validation is server-side, in each page's
@@ -14,10 +38,13 @@ export const proxy = (request: NextRequest) => {
     !PUBLIC_PATHS.has(request.nextUrl.pathname) &&
     !getSessionCookie(request)
   ) {
-    return NextResponse.redirect(new URL("/sign-in", request.url));
+    return withViewerTimezone(
+      request,
+      NextResponse.redirect(new URL("/sign-in", request.url))
+    );
   }
 
-  return NextResponse.next();
+  return withViewerTimezone(request, NextResponse.next());
 };
 
 export const config = {

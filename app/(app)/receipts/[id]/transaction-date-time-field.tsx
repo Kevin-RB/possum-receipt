@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarIcon } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -13,14 +13,16 @@ import {
 } from "@/components/ui/popover";
 import {
   formatReceiptDateTime,
+  plainDateToLocalDay,
   receiptDayToLocalString,
   receiptLocalStringToDay,
   receiptLocalStringToTime,
-  receiptToday,
 } from "@/lib/receipt/datetime";
 
 interface TransactionDateTimeFieldProps {
   onValueChange: (value: string) => void;
+  /** The viewer's day, resolved on the server — the calendar's ceiling. */
+  today: string;
   value: string | undefined;
 }
 
@@ -35,12 +37,21 @@ interface TransactionDateTimeFieldProps {
  */
 export const TransactionDateTimeField = ({
   onValueChange,
+  today,
   value,
 }: TransactionDateTimeFieldProps) => {
   const [open, setOpen] = useState(false);
 
   const day = receiptLocalStringToDay(value);
   const time = receiptLocalStringToTime(value);
+
+  // A receipt cannot be bought in the future, and "the future" is the viewer's
+  // own calendar — resolved on the server, since a component that read its own
+  // clock would be server-rendered in the server's zone and hydrated in theirs.
+  const latestDay = useMemo(
+    () => plainDateToLocalDay(Temporal.PlainDate.from(today)),
+    [today]
+  );
 
   const label = value ? formatReceiptDateTime(value) : "Select a date";
 
@@ -61,7 +72,7 @@ export const TransactionDateTimeField = ({
         <PopoverContent align="start" className="w-auto">
           <Calendar
             defaultMonth={day}
-            disabled={{ after: receiptToday() }}
+            disabled={{ after: latestDay }}
             mode="single"
             onSelect={(next) => {
               // Selecting the selected day again clears it, so an already-chosen

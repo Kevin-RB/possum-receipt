@@ -10,6 +10,7 @@ import { listReceipts } from "@/lib/db";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
 import { receiptSelectSchema } from "@/lib/db/schema/receipt";
 import { instantToWallClock } from "@/lib/receipt/datetime";
+import { viewerToday } from "@/lib/viewer";
 
 const normalizeReceipt = (receipt: ReceiptSelect): ReceiptTable => ({
   hasIntegrityWarning: receipt.hasIntegrityWarning,
@@ -35,7 +36,10 @@ const getReceiptData = async (ownerId: string): Promise<ReceiptTable[]> => {
 const ReceiptsPage = async () => {
   const session = await requireSession();
 
-  const receipts = await getReceiptData(session.user.id);
+  const [receipts, today] = await Promise.all([
+    getReceiptData(session.user.id),
+    viewerToday(session.user.timezone),
+  ]);
 
   return (
     <main className="container mx-auto flex flex-col gap-6 p-6">
@@ -57,7 +61,11 @@ const ReceiptsPage = async () => {
             and the whole page, wider than the window instead of scrolling
             inside the table's own container. */}
         <section className="mx-auto w-full [contain:inline-size]">
-          <DataTable columns={receiptColumns} data={receipts} />
+          <DataTable
+            columns={receiptColumns}
+            data={receipts}
+            today={today.toString()}
+          />
         </section>
       </ReceiptsRealtimeProvider>
     </main>

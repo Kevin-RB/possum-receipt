@@ -8,6 +8,8 @@ import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
 import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
 import { reportError, USER_ERROR } from "@/lib/errors";
+import { resolveToday, resolveTimezone } from "@/lib/time";
+import { viewerTimezone } from "@/lib/viewer";
 
 /** The app runs against a local model, so latency is bound by OCR-free local inference. */
 export const maxDuration = 60;
@@ -43,7 +45,20 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid messages." }, { status: 400 });
   }
 
-  const agent = await createChatAgent(session.user.id);
+  // The browser names its own zone — it is the clock in front of the reader, and
+  // the cookie is only a page-request copy of it. A value that is not a zone
+  // name is dropped by `resolveTimezone`, falling through to the account's.
+  const timezone = resolveTimezone(
+    (body as { timezone?: unknown }).timezone,
+    await viewerTimezone(),
+    session.user.timezone
+  );
+
+  const agent = await createChatAgent(
+    session.user.id,
+    resolveToday(timezone),
+    timezone
+  );
 
   return createAgentUIStreamResponse({
     abortSignal: request.signal,

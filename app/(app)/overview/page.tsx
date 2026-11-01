@@ -8,6 +8,7 @@ import { requireSession } from "@/lib/auth/dal";
 import { listDoneReceipts, spendByCategoryByDay } from "@/lib/db";
 import { receiptSelectSchema } from "@/lib/db/schema/receipt";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
+import { viewerToday } from "@/lib/viewer";
 
 const CATEGORY_HISTORY_DAYS = 95;
 
@@ -23,9 +24,16 @@ const getReceipts = async (ownerId: string): Promise<ReceiptSelect[]> => {
 const OverviewPage = async () => {
   const session = await requireSession();
 
+  // Resolved once, here: every chart and the query behind them answer "the
+  // last 30 days" from the same day. A client component reading its own clock
+  // would be server-rendered in the server's zone and hydrated in the
+  // viewer's, which is a mismatch on every overview load for anyone else.
+  const today = await viewerToday(session.user.timezone);
+  const todayISO = today.toString();
+
   const [receipts, categorySpend] = await Promise.all([
     getReceipts(session.user.id),
-    spendByCategoryByDay(session.user.id, CATEGORY_HISTORY_DAYS),
+    spendByCategoryByDay(session.user.id, CATEGORY_HISTORY_DAYS, today),
   ]);
 
   return (
@@ -36,8 +44,9 @@ const OverviewPage = async () => {
           total,
           transactionDateTime,
         }))}
+        today={todayISO}
       />
-      <CategorySpendingChart rows={categorySpend} />
+      <CategorySpendingChart rows={categorySpend} today={todayISO} />
       <div className="grid gap-6 lg:grid-cols-2">
         <MerchantSpendingChart
           receipts={receipts.map(

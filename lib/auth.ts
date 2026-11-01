@@ -53,6 +53,14 @@ export const auth = betterAuth({
         transform: { input: () => null },
         type: "string",
       },
+      timezone: {
+        input: true,
+        required: false,
+        // The zone the account was created in, sent by the sign-up form from
+        // the browser. A stored fallback for "today" when a request carries no
+        // viewer zone; `resolveTimezone` validates it on read.
+        type: "string",
+      },
     },
   },
 });

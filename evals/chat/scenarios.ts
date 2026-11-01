@@ -1,5 +1,5 @@
 import "temporal-polyfill/global";
-import { RECEIPT_TIMEZONE } from "@/lib/receipt/datetime";
+import { DEFAULT_TIMEZONE, resolveToday } from "@/lib/time";
 
 /**
  * Scenario definitions for the real-model chat eval. Each check asserts one
@@ -294,11 +294,12 @@ export const expectAnswerNamesNewestDate = (toolName: string): Check => ({
 });
 
 /**
- * "Last month" is the previous calendar month in the receipt timezone, the
- * period the model is told to derive from today's date. Computing it here keeps
- * the expectation correct whenever the eval runs.
+ * "Last month" is the previous calendar month in the zone the eval's agent is
+ * told today's date in — the default zone, since an eval run has no viewer
+ * behind it. Computing it here keeps the expectation correct whenever the eval
+ * runs.
  */
-const today = Temporal.Now.plainDateISO(RECEIPT_TIMEZONE);
+const today = resolveToday(DEFAULT_TIMEZONE);
 const thisMonthStart = today.with({ day: 1 });
 const lastMonth = {
   from: thisMonthStart.subtract({ months: 1 }).toString(),

@@ -51,7 +51,13 @@ export const SignupForm = ({
   });
 
   const onSubmit = async (values: SignUpValues) => {
-    const { error } = await signUp.email(values);
+    // The account's own zone, stored once here so that a request carrying no
+    // viewer zone still knows where the reader lives. The browser is the only
+    // party that knows it at this point.
+    const { error } = await signUp.email({
+      ...values,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
     if (error) {
       setError("root", { message: error.message ?? "Failed to sign up" });
       return;

@@ -12,8 +12,9 @@ const pad = (value: number) => value.toString().padStart(2, "0");
  * extraction. Both forms parse; nothing is converted between zones.
  *
  * Instants are still used for server events (`created_at`, `categorized_at`),
- * and `RECEIPT_TIMEZONE` survives to interpret a stray UTC designator and to
- * answer "what day is it now".
+ * and `RECEIPT_TIMEZONE` survives to interpret a stray UTC designator. It no
+ * longer answers "what day is it now": that is the viewer's clock, and
+ * `lib/time.ts` resolves it.
  */
 export const wallClockToPlainDateTime = (
   value: string
@@ -193,6 +194,19 @@ const tryParse = <T>(parse: () => T): T | undefined => {
   }
 };
 
+/**
+ * A calendar day carried the way the calendar components carry one: a `Date`
+ * at the browser's local midnight holding those year/month/day components.
+ *
+ * This is what keeps a calendar comparing on one frame of reference. Reading
+ * the day back off an instant would shift it by one for any browser west of
+ * the zone it was read in.
+ */
+export const plainDateToLocalDay = (date: Temporal.PlainDate): Date => {
+  const { day, month, year } = date;
+  return new Date(year, month - 1, day);
+};
+
 export const receiptLocalStringToDay = (
   localString: string | undefined
 ): Date | undefined => {
@@ -208,12 +222,7 @@ export const receiptLocalStringToDay = (
     Temporal.PlainDate.from(`${parts.year}-${parts.month}-${parts.day}`)
   );
 
-  if (!plainDate) {
-    return;
-  }
-
-  const { day, month, year } = plainDate;
-  return new Date(year, month - 1, day);
+  return plainDate ? plainDateToLocalDay(plainDate) : undefined;
 };
 
 const HOUR_MINUTE_PATTERN = /^(?<hour>\d{2}):(?<minute>\d{2})$/u;
@@ -241,31 +250,6 @@ export const receiptLocalStringToTime = (
 /** The ISO date of a calendar day carried at browser-local midnight. */
 export const localDayToISODate = (day: Date): string =>
   `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
-
-/**
- * The last day a receipt transaction datetime may fall on: today in the
- * receipt's own timezone, carried the same way `receiptLocalStringToDay`
- * carries a day — a `Date` at the browser's local midnight holding the
- * receipt-local year/month/day.
- *
- * This must be built in the receipt timezone rather than from `new Date()`.
- * A calendar compares its cells (receipt-local days) against this bound, so a
- * browser whose own clock is behind Brisbane reads "today" as tomorrow and
- * would disable the very day a receipt was bought.
- */
-export const receiptToday = (
-  timezone = RECEIPT_TIMEZONE,
-  now: Temporal.Instant | Date = Temporal.Now.instant()
-): Date => {
-  const instant =
-    now instanceof Date
-      ? Temporal.Instant.fromEpochMilliseconds(now.getTime())
-      : now;
-  const { day, month, year } = instant
-    .toZonedDateTimeISO(timezone)
-    .toPlainDate();
-  return new Date(year, month - 1, day);
-};
 
 /**
  * Combines a calendar day with a time of day. A time that is absent or not a

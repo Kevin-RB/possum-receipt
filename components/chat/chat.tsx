@@ -102,7 +102,15 @@ export const Chat = ({ firstName }: { firstName: string }) => {
     // the unanswered tool call is the signal that the agent is waiting.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     throttle: THROTTLE_MS,
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      // The browser is the clock in front of the reader, and a function is read
+      // per request: the edge's `tz` cookie is only a copy taken on the last
+      // page load, and this is where the viewer actually is now.
+      body: () => ({
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    }),
   });
 
   const busy = status === "submitted" || status === "streaming";

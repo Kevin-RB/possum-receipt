@@ -2,7 +2,6 @@ import { ToolLoopAgent } from "ai";
 
 import { CHAT_MODEL, lmstudio } from "@/lib/ai/provider";
 import { listCategoryOptions } from "@/lib/db";
-import { RECEIPT_TIMEZONE } from "@/lib/receipt/datetime";
 
 import { buildChatTools } from "./tools";
 
@@ -15,11 +14,14 @@ import { buildChatTools } from "./tools";
 export const MAX_STEPS = 8;
 
 export const buildInstructions = (
-  categories: { name: string; parentName: string | null }[]
+  categories: { name: string; parentName: string | null }[],
+  today: Temporal.PlainDate,
+  timezone: string
 ): string => {
-  // "What day is it now" is a clock reading, not a receipt date: the receipt's
-  // own day is stored data. #192 replaces this with the viewer's timezone.
-  const today = Temporal.Now.plainDateISO(RECEIPT_TIMEZONE).toString();
+  // `today` and `timezone` are the viewer's clock, resolved by the route and
+  // passed in: the prompt is pure, so a test can state its date. A receipt's
+  // own day is stored data and never comes from here.
+  const todayISO = today.toString();
   // The hierarchy is kept — without it the model invents which subcategories
   // belong to a top-level category, and attributes them wrongly — but never as
   // a `Parent > Child` path, which it echoed verbatim into its prose.
@@ -35,7 +37,7 @@ export const buildInstructions = (
     )
     .join("; ");
 
-  return `You are a personal spending assistant for a receipt-tracking app. Today is ${today} (${RECEIPT_TIMEZONE}).
+  return `You are a personal spending assistant for a receipt-tracking app. Today is ${todayISO} (${timezone}).
 
 You answer questions about the user's own receipts by calling the provided tools.
 
@@ -62,11 +64,15 @@ Asking questions:
 - Only when the missing detail would not change any tool call — a mere phrasing ambiguity, two words for the same thing — pick the most likely reading, say so in one clause, and answer anyway.`;
 };
 
-export const createChatAgent = async (ownerId: string) => {
+export const createChatAgent = async (
+  ownerId: string,
+  today: Temporal.PlainDate,
+  timezone: string
+) => {
   const taxonomy = await listCategoryOptions();
 
   return new ToolLoopAgent({
-    instructions: buildInstructions(taxonomy),
+    instructions: buildInstructions(taxonomy, today, timezone),
     model: lmstudio.chatModel(CHAT_MODEL),
     stopWhen: ({ steps }) => steps.length >= MAX_STEPS,
     tools: buildChatTools(ownerId),
