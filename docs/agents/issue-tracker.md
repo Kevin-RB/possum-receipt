@@ -26,7 +26,9 @@ gh api -X POST repos/{owner}/{repo}/issues/<blocked>/dependencies/blocked_by \
 
 Read them back with `gh issue view <n> --json blockedBy`, or the blocking side with `gh api repos/{owner}/{repo}/issues/<n>/dependencies/blocking`.
 
-Keep the _reason_ for the block in the body — the relationship belongs to GitHub, the explanation belongs to the issue.
+Keep the _reason_ for the block in the body — the relationship belongs to GitHub, the explanation belongs to the issue. When the edge is native, the body must not also carry a `## Blocked by` section.
+
+The ticket shape and this rule come from the `to-tickets` skill. Load it whenever a plan, spec, or conversation becomes issues.
 
 ## Pull requests as a triage surface
 
