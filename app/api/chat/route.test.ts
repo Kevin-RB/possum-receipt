@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_TIMEZONE } from "@/lib/time";
 
 /**
- * The chat route's own link in the chain: the browser's zone in the request
- * body, then the page's `tz` cookie, then the account's stored zone, then the
- * constant. `lib/time.ts` and `lib/viewer.ts` test the resolver in isolation;
- * this pins the order the route actually passes them in, which is the part a
- * future edit could silently swap.
+ * The chat route's own link in the chain: the `cf-timezone` header, then the
+ * page's `tz` cookie, then the browser's zone in the request body, then the
+ * account's stored zone, then the constant. `lib/time.ts` and `lib/viewer.ts`
+ * test the resolver in isolation; this pins the order the route actually passes
+ * them in, which is the part a future edit could silently swap.
  */
 const state = vi.hoisted(() => ({
   cookie: undefined as string | undefined,
