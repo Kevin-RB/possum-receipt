@@ -1,20 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_TIMEZONE } from "@/lib/time";
 
 /**
- * The chain as the pages actually walk it: the zone the edge wrote into the
- * cookie, then the zone the account was created in, then the constant. Reading
- * the cookie is the only thing `next/headers` does here, so it is stubbed.
+ * The chain as the pages actually walk it: the zone Cloudflare puts on the
+ * request, then the copy `proxy.ts` keeps in the `tz` cookie, then the zone the
+ * account was created in, then the constant. Both `next/headers` reads are
+ * stubbed; everything below them is the real resolver.
  */
-const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
+const edge = vi.hoisted(() => ({
+  cookie: undefined as string | undefined,
+  header: undefined as string | undefined,
+}));
 
-// @ts-expect-error only `get` is reached; the rest of the cookie store is unused
+// @ts-expect-error only `get` is reached; the rest of the store is unused
 vi.mock(import("next/headers"), () => ({
   cookies: () =>
     Promise.resolve({
       get: (name: string) =>
-        name === "tz" && cookie.value ? { value: cookie.value } : undefined,
+        name === "tz" && edge.cookie ? { value: edge.cookie } : undefined,
+    }),
+  headers: () =>
+    Promise.resolve({
+      get: (name: string) =>
+        name === "cf-timezone" ? (edge.header ?? null) : null,
     }),
 }));
 
@@ -34,44 +43,82 @@ const todayIn = async (accountZone?: string | null): Promise<string> => {
   return today.toString();
 };
 
+describe(viewerTimezone, () => {
+  beforeEach(() => {
+    edge.header = undefined;
+    edge.cookie = undefined;
+  });
+
+  it("reads the header the edge put on this request", async () => {
+    // The header is per request, so it is right on the first render after
+    // someone travels — before any cookie could have been rewritten.
+    edge.header = "Pacific/Kiritimati";
+
+    await expect(viewerTimezone()).resolves.toBe("Pacific/Kiritimati");
+  });
+
+  it("prefers the header over an older cookie", async () => {
+    edge.header = "Pacific/Kiritimati";
+    edge.cookie = "America/Bogota";
+
+    await expect(viewerTimezone()).resolves.toBe("Pacific/Kiritimati");
+  });
+
+  it("uses the cookie when the request carries no header", async () => {
+    // Local development has no Cloudflare, and neither does a LAN request.
+    edge.cookie = "America/Bogota";
+
+    await expect(viewerTimezone()).resolves.toBe("America/Bogota");
+  });
+
+  it("skips an empty header the way it skips an empty cookie", async () => {
+    // Cloudflare can send the header with no value when it cannot place the IP.
+    edge.header = "";
+    edge.cookie = "America/Bogota";
+
+    await expect(viewerTimezone()).resolves.toBe("America/Bogota");
+  });
+
+  it("has no zone when neither transport carried one", async () => {
+    await expect(viewerTimezone()).resolves.toBeUndefined();
+  });
+});
+
 describe(viewerToday, () => {
+  beforeEach(() => {
+    edge.header = undefined;
+    edge.cookie = undefined;
+  });
+
   it("prefers the viewer's zone over the account's", async () => {
     // The bug this pins: the account's zone is where the reader signed up, so
     // answering from it tells a traveller the date they left behind.
-    cookie.value = "Pacific/Kiritimati";
+    edge.header = "Pacific/Kiritimati";
 
-    await expect(todayIn("Pacific/Midway")).resolves.toBe(
+    await expect(todayIn("Etc/GMT+12")).resolves.toBe(
       isoDayIn(Date.now(), "Pacific/Kiritimati")
     );
   });
 
-  it("falls back to the account's zone when the edge reported none", async () => {
-    cookie.value = undefined;
+  it("falls back to the cookie when the header is absent", async () => {
+    edge.cookie = "Pacific/Kiritimati";
 
+    await expect(todayIn("Etc/GMT+12")).resolves.toBe(
+      isoDayIn(Date.now(), "Pacific/Kiritimati")
+    );
+  });
+
+  it("falls back to the account's zone when no transport carried one", async () => {
     await expect(todayIn("Pacific/Kiritimati")).resolves.toBe(
       isoDayIn(Date.now(), "Pacific/Kiritimati")
     );
   });
 
-  it("falls back to the constant when neither names a zone", async () => {
-    cookie.value = "Not/AZone";
+  it("falls back to the constant when nothing names a zone", async () => {
+    edge.cookie = "Not/AZone";
 
     await expect(todayIn(null)).resolves.toBe(
       isoDayIn(Date.now(), DEFAULT_TIMEZONE)
     );
-  });
-});
-
-describe(viewerTimezone, () => {
-  it("reads the cookie the proxy writes from the edge header", async () => {
-    cookie.value = "America/Bogota";
-
-    await expect(viewerTimezone()).resolves.toBe("America/Bogota");
-  });
-
-  it("has no zone when the cookie is absent, as in local development", async () => {
-    cookie.value = undefined;
-
-    await expect(viewerTimezone()).resolves.toBeUndefined();
   });
 });

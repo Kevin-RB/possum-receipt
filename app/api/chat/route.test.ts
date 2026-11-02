@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_TIMEZONE } from "@/lib/time";
 
@@ -12,6 +12,7 @@ import { DEFAULT_TIMEZONE } from "@/lib/time";
 const state = vi.hoisted(() => ({
   cookie: undefined as string | undefined,
   created: [] as { date: string; ownerId: string; timezone: string }[],
+  header: undefined as string | undefined,
 }));
 
 // @ts-expect-error only `get` is reached; the rest of the store is unused here
@@ -20,6 +21,11 @@ vi.mock(import("next/headers"), () => ({
     Promise.resolve({
       get: (name: string) =>
         name === "tz" && state.cookie ? { value: state.cookie } : undefined,
+    }),
+  headers: () =>
+    Promise.resolve({
+      get: (name: string) =>
+        name === "cf-timezone" ? (state.header ?? null) : null,
     }),
 }));
 
@@ -86,6 +92,11 @@ const post = async (body: Record<string, unknown>, accountZone?: string) => {
 };
 
 describe("POST /api/chat resolves today", () => {
+  beforeEach(() => {
+    state.cookie = undefined;
+    state.header = undefined;
+  });
+
   it("prefers the zone the browser sent over the cookie and the account", async () => {
     state.cookie = "Etc/GMT+12";
 
@@ -98,7 +109,17 @@ describe("POST /api/chat resolves today", () => {
     expect(resolved?.date).toBe(isoDayIn("Pacific/Kiritimati"));
   });
 
-  it("uses the cookie when the body carries no zone", async () => {
+  it("uses the edge header when the body carries no zone", async () => {
+    state.header = "Etc/GMT+12";
+    state.cookie = "America/Bogota";
+
+    const resolved = await post({}, "Pacific/Kiritimati");
+
+    expect(resolved?.timezone).toBe("Etc/GMT+12");
+    expect(resolved?.date).toBe(isoDayIn("Etc/GMT+12"));
+  });
+
+  it("uses the cookie when neither a body zone nor a header exists", async () => {
     state.cookie = "Etc/GMT+12";
 
     const resolved = await post({}, "America/Bogota");

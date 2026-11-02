@@ -1,15 +1,28 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { resolveToday, TIMEZONE_COOKIE } from "@/lib/time";
 
 /**
- * The zone the edge reported for this request.
+ * The zone the edge reported for this request, or `undefined` when nothing did.
  *
- * `undefined` off Cloudflare — in local development there is no `cf-timezone`
- * header and therefore no cookie — which leaves the account's zone to answer.
- * Server-only: the cookie is read through `next/headers`.
+ * Two transports, in order of freshness:
+ *
+ * 1. the `cf-timezone` request header — Cloudflare adds it to the request
+ *    itself, so it is right on the *first* render after someone travels;
+ * 2. the `tz` cookie `proxy.ts` writes from that header — for a request that
+ *    arrives without it (local development, LAN access, a future proxy). The
+ *    cookie is one request behind, which is why the header is asked first.
+ *
+ * Server-only: both reads go through `next/headers`.
  */
 export const viewerTimezone = async (): Promise<string | undefined> => {
+  const requestHeaders = await headers();
+  const fromEdge = requestHeaders.get("cf-timezone");
+
+  if (fromEdge) {
+    return fromEdge;
+  }
+
   const cookieStore = await cookies();
   return cookieStore.get(TIMEZONE_COOKIE)?.value;
 };
