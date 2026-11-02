@@ -30,6 +30,16 @@ const isZoneName = (value: string): boolean => {
 };
 
 /**
+ * Whether a value names a real IANA zone.
+ *
+ * The proxy uses it to decide whether a development override is a zone at all,
+ * so a typo in an env var is ignored rather than written into a cookie that
+ * every reader would then skip.
+ */
+export const isTimezone = (value: unknown): value is string =>
+  typeof value === "string" && isZoneName(value);
+
+/**
  * The first candidate that names a real zone, or `DEFAULT_TIMEZONE`.
  *
  * Candidates arrive in priority order — the viewer's zone, then the account's.
@@ -39,10 +49,7 @@ const isZoneName = (value: string): boolean => {
  * always worth trying.
  */
 export const resolveTimezone = (...candidates: unknown[]): string =>
-  candidates.find(
-    (candidate): candidate is string =>
-      typeof candidate === "string" && isZoneName(candidate)
-  ) ?? DEFAULT_TIMEZONE;
+  candidates.find(isTimezone) ?? DEFAULT_TIMEZONE;
 
 /**
  * "Today", for the viewer that resolved to those candidates.

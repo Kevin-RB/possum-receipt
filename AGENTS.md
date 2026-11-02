@@ -106,6 +106,7 @@ Local env defaults are in `.env.local` (which is gitignored). Key variables:
 - `INNGEST_DEV=1`, `INNGEST_BASE_URL=http://localhost:8288`
 - `LM_STUDIO_URL`, `ORC_MODEL`, `PARSE_MODEL`, `CATEGORIZE_MODEL`, `CHAT_MODEL`
 - `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, `INVITE_CODE` (required to register)
+- `DEV_TIMEZONE` (optional) — the zone local development pretends the viewer is in, standing in for the `cf-timezone` header Cloudflare would add. Honoured only when `NODE_ENV === "development"` and only when it names a real zone, so `pnpm start` and every deployed build ignore it. See ADR-0016.
 
 ## Production deployment (Coolify / `docker-compose.coolify.yml`)
 
@@ -131,7 +132,7 @@ Key properties:
   ```sh
   curl -s -o /dev/null -D - https://receipts.tribi.dev/sign-in | grep -i '^set-cookie: tz='
   ```
-  `set-cookie: tz=…` means the header arrived; nothing means it did not. The transform also adds nine other location headers (`cf-ipcity`, `cf-ipcountry`, `cf-region`, lat/long, postal code, …) to every origin request. Local development has no Cloudflare, so the page path falls back — set the cookie by hand to exercise it (`document.cookie = "tz=America/Bogota; path=/"` in devtools; `proxy.ts` only rewrites the cookie when a header exists, so a hand-set value survives).
+  `set-cookie: tz=…` means the header arrived; nothing means it did not. The transform also adds nine other location headers (`cf-ipcity`, `cf-ipcountry`, `cf-region`, lat/long, postal code, …) to every origin request. Local development has no Cloudflare, so `proxy.ts` stands in for the edge: `DEV_TIMEZONE=America/Bogota pnpm dev` forwards that zone as the `cf-timezone` request header, and the page path then runs exactly as it does in a deployment. Without it, pages fall back to the account's zone and then Brisbane.
 - **Backups**: two independent mechanisms, both configured per-environment in the Coolify UI. **Both are same-host** — they protect against a bad deploy or a deleted volume, not against losing the mini. Off-box storage (external S3/B2) is the planned destination and is deliberately deferred; see ADR-0005.
   1. **Volume backup** — Coolify's storage backup on `postgres-data`, landing in `/data/coolify/backups/volumes/…` as a `tar.gz` of the whole data directory. Complete (all databases, roles, extensions) and restores by untarring over a fresh volume on the same `postgres:18-alpine` image, so it is **not portable across major versions**. Configure it _without_ "stop the container": stopping would make the archive consistent, but it costs service interruption, so the archive is a live-database copy. That is acceptable only because mechanism 2 exists — see the note below.
   2. **`pg_dump`** — a Coolify **Scheduled Task** whose container is `postgres` and whose command is:

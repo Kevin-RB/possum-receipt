@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_TIMEZONE,
+  isTimezone,
   resolveToday,
   resolveTimezone,
   weekdayOf,
@@ -95,5 +96,14 @@ describe(weekdayOf, () => {
     // The carrier is a `Date` at UTC holding the plain date's components, so a
     // runtime whose own midnight falls earlier cannot read back the day before.
     expect(weekdayOf(Temporal.PlainDate.from("2026-01-01"))).toBe("Thursday");
+  });
+});
+
+describe(isTimezone, () => {
+  it("accepts a zone name and rejects everything else", () => {
+    expect(isTimezone("America/Bogota")).toBeTruthy();
+    expect(isTimezone("")).toBeFalsy();
+    expect(isTimezone("Not/AZone")).toBeFalsy();
+    expect(isTimezone(42)).toBeFalsy();
   });
 });
