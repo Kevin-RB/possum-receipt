@@ -24,7 +24,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { signUp } from "@/lib/auth-client";
-import { browserTimezone } from "@/lib/time";
+import { browserTimezone } from "@/lib/browser-timezone";
 import { cn } from "@/lib/utils";
 
 const signUpSchema = z.object({

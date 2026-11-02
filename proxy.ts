@@ -14,10 +14,10 @@ const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up"]);
  * for the edge — `DEV_TIMEZONE=America/Bogota pnpm dev` — and the rest of the
  * code then runs exactly as it does in a deployment.
  *
- * Two guards, because a spoofable zone is a real (if small) hazard: the check
- * is for `development` exactly, so `pnpm start` and every deployed build (which
- * build with `NODE_ENV=production`) inject nothing, and the value must name a
- * real zone or it is ignored.
+ * Two guards: the check is for `development` exactly, so `pnpm start` and every
+ * deployed build (which build with `NODE_ENV=production`) inject nothing — a
+ * client cannot set an environment variable — and the value must name a real
+ * zone, or a typo would be mirrored into a cookie every reader then skips.
  */
 const devViewerZone = (): string | null => {
   if (process.env.NODE_ENV !== "development") {
@@ -50,6 +50,13 @@ const withViewerTimezone = (
       path: "/",
       sameSite: "lax",
     });
+  } else if (process.env.NODE_ENV === "development") {
+    // Nothing here writes the cookie but a stand-in, so a value left behind by
+    // an earlier `DEV_TIMEZONE` run would outlive the variable and quietly keep
+    // answering. Development has one source — the variable, or the fallbacks —
+    // and this is what makes unsetting it return to Brisbane. Never in a
+    // deployment, where an absent header must leave the cookie alone.
+    response.cookies.delete(TIMEZONE_COOKIE);
   }
 
   return response;

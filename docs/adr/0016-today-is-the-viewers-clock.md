@@ -16,14 +16,13 @@ After ADR-0015 a receipt's day is stored data and never depends on any of this. 
 
 **"Now" is a property of the viewer's clock. The account's zone is a stored fallback, not the source of truth.**
 
-`lib/time.ts` resolves one chain, in priority order:
+`lib/time.ts` resolves one chain. **Every surface asks the same sources in the same order**, which is what keeps the assistant and the charts from disagreeing about the day:
 
-1. **the viewer's zone**, transported two ways:
-   - the **`cf-timezone` request header**, which Cloudflare adds to the request itself — read first, so the very first render after someone travels is already right;
-   - the chat request body's `timezone`, which the browser fills from `Intl.DateTimeFormat().resolvedOptions().timeZone`;
-   - the **`tz` cookie**, which `proxy.ts` copies the header into — one request behind, and only consulted when a request arrives without the header (local development, LAN access, anything not proxied by Cloudflare);
-2. **`user.timezone`** — captured at sign-up from the same browser;
-3. **`DEFAULT_TIMEZONE`** — `Australia/Brisbane`, for work with no viewer behind it.
+1. **the `cf-timezone` request header** — Cloudflare adds it to the request itself, so the very first render after someone travels is already right. `lib/viewer.ts` reads it, and `proxy.ts` also copies it into the **`tz` cookie**;
+2. **the `tz` cookie** — one request behind, for a request that arrives without the header (LAN access, anything not proxied by Cloudflare, local development);
+3. **the chat request body's `timezone`** — the browser's own zone, which only a chat turn carries. It is third, not first: the assistant walks the page chain before falling back to evidence only it has;
+4. **`user.timezone`** — captured at sign-up from the same browser;
+5. **`DEFAULT_TIMEZONE`** — `Australia/Brisbane`, for work with no viewer behind it.
 
 Every candidate is taken as `unknown` and validated by `Temporal.Now.plainDateISO(candidate)`; a value that names nothing is dropped rather than thrown — an empty `cf-timezone`, which Cloudflare sends when it cannot place the IP, included. The chain must survive a bad candidate and move on.
 
@@ -37,16 +36,16 @@ Every candidate is taken as `unknown` and validated by `Temporal.Now.plainDateIS
 
 ## Consequences
 
-- The `tz` cookie is **transport, not a preference**: rewritten from the edge header on every page response, including the bounce to sign-in, and never editable in the UI. It is absent in local development, where nothing sets `cf-timezone`. The header is asked first because the cookie is always one request behind — it is written on the _response_, so the request that creates it still renders from the fallbacks.
-- **The page half depends on a Cloudflare Managed Transform.** `cf-timezone` is not a standard header: it only exists when the zone's **Add visitor location headers** transform is on (**Rules → Settings → Managed Transforms**). Off by default, per zone, and nothing in the repo can assert it. If it is off, nothing errors: pages fall back to `user.timezone` and then Brisbane while the chat keeps using the browser's zone, so the two surfaces disagree. Enabled for `tribi.dev` (prod and staging); verified after a zone change with `curl -s -o /dev/null -D - https://receipts.tribi.dev/sign-in | grep -i '^set-cookie: tz='`. The transform also sends nine other location headers to the origin.
-- The header is **IP-derived**, so it is where the request came from, not necessarily where the reader's clock is: a VPN or a laptop left on home time makes pages and chat disagree. Pages follow the edge, the chat follows the device. Both are defensible; "today" for a number on a screen is cosmetic, not a report.
-- **Local development has no Cloudflare**, so `proxy.ts` stands in for the edge: with `DEV_TIMEZONE` set it forwards that zone as the `cf-timezone` request header, and the page path runs exactly as it does in a deployment. It is gated on `NODE_ENV === "development"` (so `pnpm start` and every deployed build ignore it, which is what stops a client spoofing its own zone) and on the value naming a real zone (so a typo is ignored rather than written into a cookie). Exercised in `proxy.test.ts`; the chat still uses the browser's own zone.
+- The `tz` cookie is **transport, not a preference**: rewritten from the edge header on every page response, including the bounce to sign-in, and never editable in the UI. It is only written when a header exists, so in local development it appears only while `DEV_TIMEZONE` is set. The header is asked first because the cookie is always one request behind — it is written on the _response_, so the request that creates it still renders from the fallbacks.
+- **The page half depends on a Cloudflare Managed Transform.** `cf-timezone` is not a standard header: it only exists when the zone's **Add visitor location headers** transform is on (**Rules → Settings → Managed Transforms**). Off by default, per zone, and nothing in the repo can assert it. If it is off, nothing errors: every surface falls back to `user.timezone` and then Brisbane, together, so the app stays self-consistent — it is simply wrong about a traveller. The chat's body zone is the last viewer-sourced candidate and only answers when neither the header nor the cookie exists. Enabled for `tribi.dev` (prod and staging); verified after a zone change with `curl -s -o /dev/null -D - https://receipts.tribi.dev/sign-in | grep -i '^set-cookie: tz='`. The transform also sends nine other location headers to the origin.
+- The header is **IP-derived**, so it is where the request came from, not necessarily where the reader's clock is: a VPN, or a laptop left on home time, makes every surface agree on the wrong place rather than disagreeing. That is the deliberate trade: one answer everywhere beats an accurate one on each surface. "Today" for a number on a screen is cosmetic, not a report.
+- **Local development has no Cloudflare**, so `proxy.ts` stands in for the edge: with `DEV_TIMEZONE` set it forwards that zone as the `cf-timezone` request header, and every surface then runs exactly as it does in a deployment. It is gated on `NODE_ENV === "development"` — `pnpm start` and every deployed build ignore it, because a deployment is built with `NODE_ENV=production` and a client cannot set an environment variable — and on the value naming a real zone, so a typo is ignored rather than written into a cookie. The client-controlled input is the `cf-timezone` header itself, which any client may send; it is validated downstream and only ever moves that client's own "today", the same trust level as the chat body. Exercised in `proxy.test.ts`.
 - `buildInstructions` is pure — it takes the date and the zone label — so a test can pin the date instead of describing whatever day the suite runs on.
 - The charts' windows and the SQL window behind them come from the same resolved day. A query window and a chart window that disagreed would leave the rightmost bar without its data.
 - `user.timezone` is nullable: Better Auth writes it, and a row created before the column existed has no zone. `resolveTimezone` treats both the same.
 - No client component calls `Temporal.Now`. The remaining calls are in `lib/time.ts` itself (the resolution) and in the fixture script, which builds `created_at` instants.
 - `RECEIPT_TIMEZONE` is now defined as `DEFAULT_TIMEZONE`: one literal, two names, because the home zone serves both "which zone did this value's printer mean" and "what zone is today's fallback". `browserTimezone()` names the `Intl` expression the two browser call sites share.
-- `proxy.ts` imports `lib/time.ts` for the cookie name, which pulls the Temporal polyfill into the middleware bundle. Accepted for one source of truth; nothing else in `proxy.ts` needs a zone.
+- `proxy.ts` imports `lib/time.ts` for the cookie name and `isTimezone`, which pulls the Temporal polyfill into the middleware bundle. Accepted; the alternative is a second zone-name check. Client bundles are a different matter and were fixed: `browserTimezone` lives in its own import-free module (`lib/browser-timezone.ts`) so sign-up and chat do not ship the polyfill to read one `Intl` property.
 
 ## Related
 

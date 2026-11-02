@@ -45,12 +45,15 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid messages." }, { status: 400 });
   }
 
-  // The browser names its own zone — it is the clock in front of the reader, and
-  // the cookie is only a page-request copy of it. A value that is not a zone
-  // name is dropped by `resolveTimezone`, falling through to the account's.
+  // The same chain the pages walk, in the same order: the edge, then the cookie
+  // it seeded, then the browser's own zone, then the account. Asking the same
+  // sources in the same order is what keeps the assistant and the charts on the
+  // same day — two carriers that disagreed would have the app answering "today"
+  // two ways, and a value that is not a zone name is dropped by `resolveTimezone`
+  // rather than allowed to win.
   const timezone = resolveTimezone(
-    (body as { timezone?: unknown }).timezone,
     await viewerTimezone(),
+    (body as { timezone?: unknown }).timezone,
     session.user.timezone
   );
 

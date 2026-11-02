@@ -27,6 +27,7 @@ import {
   useMessageScrollerScrollable,
 } from "@/components/ui/message-scroller";
 import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
+import { browserTimezone } from "@/lib/browser-timezone";
 import { chatErrorText } from "@/lib/chat/errors";
 import { greetingFor } from "@/lib/chat/greeting";
 import { isLastStreaming } from "@/lib/chat/message-parts";
@@ -35,7 +36,6 @@ import type {
   AskUserToolPart,
   ChatUIMessage,
 } from "@/lib/chat/tools";
-import { browserTimezone } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { ChatMessage } from "./chat-message";

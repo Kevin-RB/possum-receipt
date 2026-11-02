@@ -88,8 +88,10 @@ describe("the development stand-in", () => {
   });
 
   it("is ignored outside development", () => {
-    // A deployed build sets NODE_ENV=production, so this is what keeps a
-    // client from spoofing its own zone through an env var.
+    // A deployment builds with NODE_ENV=production and a client cannot set an
+    // environment variable, so the stand-in exists only on a developer's
+    // machine. (The client-controlled input is the header itself, which any
+    // request may carry and `resolveTimezone` validates.)
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("DEV_TIMEZONE", "America/Bogota");
 
@@ -107,7 +109,7 @@ describe("the development stand-in", () => {
     const response = proxy(request("/overview", SESSION));
 
     expect(forwarded(response)).toBeNull();
-    expect(response.cookies.get("tz")).toBeUndefined();
+    expect(response.cookies.get("tz")?.value).toBeFalsy();
   });
 
   it("is ignored when unset", () => {
@@ -117,5 +119,38 @@ describe("the development stand-in", () => {
     const response = proxy(request("/overview", SESSION));
 
     expect(forwarded(response)).toBeNull();
+  });
+
+  it("clears a cookie left behind by an earlier run", () => {
+    // Development has one source — the variable, or the fallbacks — so
+    // unsetting it has to return to Brisbane rather than inherit yesterday's
+    // experiment.
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("DEV_TIMEZONE", "");
+
+    const response = proxy(
+      request("/overview", {
+        ...SESSION,
+        cookie: "better-auth.session_token=token; tz=America/Bogota",
+      })
+    );
+
+    expect(response.cookies.get("tz")?.value).toBeFalsy();
+    expect(response.headers.get("set-cookie")).toContain("tz=;");
+  });
+
+  it("leaves the cookie alone in a deployment", () => {
+    // A missing header in production must not discard the fallback the cookie
+    // provides for the next request.
+    vi.stubEnv("NODE_ENV", "production");
+
+    const response = proxy(
+      request("/overview", {
+        ...SESSION,
+        cookie: "better-auth.session_token=token; tz=America/Bogota",
+      })
+    );
+
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 });

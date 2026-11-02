@@ -97,9 +97,38 @@ describe("POST /api/chat resolves today", () => {
     state.header = undefined;
   });
 
-  it("prefers the zone the browser sent over the cookie and the account", async () => {
+  it("asks the same sources the pages ask, in the same order", async () => {
+    // The assistant and the charts must never disagree about which day it is,
+    // so the chat walks the page chain rather than preferring the browser: the
+    // edge, then the cookie it seeded, then the body.
+    state.header = "Etc/GMT+12";
+    state.cookie = "America/Bogota";
+
+    const resolved = await post(
+      { timezone: "Pacific/Kiritimati" },
+      "Asia/Tokyo"
+    );
+
+    expect(resolved?.timezone).toBe("Etc/GMT+12");
+    expect(resolved?.date).toBe(isoDayIn("Etc/GMT+12"));
+  });
+
+  it("uses the cookie when the request carries no header", async () => {
     state.cookie = "Etc/GMT+12";
 
+    const resolved = await post(
+      { timezone: "Pacific/Kiritimati" },
+      "America/Bogota"
+    );
+
+    expect(resolved?.timezone).toBe("Etc/GMT+12");
+    expect(resolved?.date).toBe(isoDayIn("Etc/GMT+12"));
+  });
+
+  it("uses the body's zone when neither the header nor a cookie exists", async () => {
+    // The browser is still the best evidence a request has when nothing on the
+    // wire carried a zone: local development, or a deployment whose edge header
+    // went missing.
     const resolved = await post(
       { timezone: "Pacific/Kiritimati" },
       "America/Bogota"
@@ -109,28 +138,7 @@ describe("POST /api/chat resolves today", () => {
     expect(resolved?.date).toBe(isoDayIn("Pacific/Kiritimati"));
   });
 
-  it("uses the edge header when the body carries no zone", async () => {
-    state.header = "Etc/GMT+12";
-    state.cookie = "America/Bogota";
-
-    const resolved = await post({}, "Pacific/Kiritimati");
-
-    expect(resolved?.timezone).toBe("Etc/GMT+12");
-    expect(resolved?.date).toBe(isoDayIn("Etc/GMT+12"));
-  });
-
-  it("uses the cookie when neither a body zone nor a header exists", async () => {
-    state.cookie = "Etc/GMT+12";
-
-    const resolved = await post({}, "America/Bogota");
-
-    expect(resolved?.timezone).toBe("Etc/GMT+12");
-    expect(resolved?.date).toBe(isoDayIn("Etc/GMT+12"));
-  });
-
-  it("uses the account's zone when neither a body zone nor a cookie exists", async () => {
-    state.cookie = undefined;
-
+  it("uses the account's zone when no transport carried one", async () => {
     const resolved = await post({}, "Etc/GMT+12");
 
     expect(resolved?.timezone).toBe("Etc/GMT+12");
@@ -147,9 +155,7 @@ describe("POST /api/chat resolves today", () => {
   });
 
   it("skips a body zone that is not a zone name", async () => {
-    state.cookie = "Etc/GMT+12";
-
-    const resolved = await post({ timezone: "Not/AZone" }, "America/Bogota");
+    const resolved = await post({ timezone: "Not/AZone" }, "Etc/GMT+12");
 
     expect(resolved?.timezone).toBe("Etc/GMT+12");
   });
