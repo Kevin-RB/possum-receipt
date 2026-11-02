@@ -109,7 +109,7 @@ describe("the development stand-in", () => {
     const response = proxy(request("/overview", SESSION));
 
     expect(forwarded(response)).toBeNull();
-    expect(response.cookies.get("tz")?.value).toBeFalsy();
+    expect(response.cookies.get("tz")).toBeUndefined();
   });
 
   it("is ignored when unset", () => {
@@ -121,28 +121,12 @@ describe("the development stand-in", () => {
     expect(forwarded(response)).toBeNull();
   });
 
-  it("clears a cookie left behind by an earlier run", () => {
-    // Development has one source — the variable, or the fallbacks — so
-    // unsetting it has to return to Brisbane rather than inherit yesterday's
-    // experiment.
+  it("leaves an existing cookie alone when no stand-in is set", () => {
+    // A cookie is state, not just this request's copy: a chat turn pins one
+    // from the browser's own zone. Clearing it here would throw that away on
+    // the request after it was written.
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("DEV_TIMEZONE", "");
-
-    const response = proxy(
-      request("/overview", {
-        ...SESSION,
-        cookie: "better-auth.session_token=token; tz=America/Bogota",
-      })
-    );
-
-    expect(response.cookies.get("tz")?.value).toBeFalsy();
-    expect(response.headers.get("set-cookie")).toContain("tz=;");
-  });
-
-  it("leaves the cookie alone in a deployment", () => {
-    // A missing header in production must not discard the fallback the cookie
-    // provides for the next request.
-    vi.stubEnv("NODE_ENV", "production");
 
     const response = proxy(
       request("/overview", {

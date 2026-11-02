@@ -8,7 +8,12 @@ import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
 import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
 import { reportError, USER_ERROR } from "@/lib/errors";
-import { resolveToday, resolveTimezone } from "@/lib/time";
+import {
+  isTimezone,
+  resolveToday,
+  resolveTimezone,
+  TIMEZONE_COOKIE,
+} from "@/lib/time";
 import { viewerTimezone } from "@/lib/viewer";
 
 /** The app runs against a local model, so latency is bound by OCR-free local inference. */
@@ -51,11 +56,19 @@ export const POST = async (request: Request) => {
   // same day — two carriers that disagreed would have the app answering "today"
   // two ways, and a value that is not a zone name is dropped by `resolveTimezone`
   // rather than allowed to win.
-  const timezone = resolveTimezone(
-    await viewerTimezone(),
-    (body as { timezone?: unknown }).timezone,
-    session.user.timezone
-  );
+  const wireZone = await viewerTimezone();
+  const bodyZone = (body as { timezone?: unknown }).timezone;
+
+  const timezone = resolveTimezone(wireZone, bodyZone, session.user.timezone);
+
+  // The one piece of evidence only a chat turn has. When nothing on the wire
+  // supplied a zone — no edge header, no cookie, or a header Cloudflare could
+  // not fill — the browser's answer is the best one available, and pinning it
+  // here means the pages read it on their next request and stop falling back to
+  // the account's zone. Without the pin, a page would say the reader's home
+  // day while the assistant said the day they are actually on.
+  const pinnedZone =
+    isTimezone(wireZone) || !isTimezone(bodyZone) ? undefined : bodyZone;
 
   const agent = await createChatAgent(
     session.user.id,
@@ -63,7 +76,7 @@ export const POST = async (request: Request) => {
     timezone
   );
 
-  return createAgentUIStreamResponse({
+  const response = await createAgentUIStreamResponse({
     abortSignal: request.signal,
     agent,
     // The UI shows the returned string, so it comes from the catalogue and is
@@ -77,4 +90,23 @@ export const POST = async (request: Request) => {
     // Everything past this point came off the wire. See `lib/chat/trust.ts`.
     uiMessages: discardUntrustedToolOutputs(messages),
   });
+
+  if (!pinnedZone) {
+    return response;
+  }
+
+  // Rewrapped rather than hand-serialised, so the cookie carries the same
+  // attributes `proxy.ts` writes — `NextResponse.cookies.set` owns the encoding
+  // and the `Set-Cookie` shape.
+  const pinned = new NextResponse(response.body, {
+    headers: response.headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
+  pinned.cookies.set(TIMEZONE_COOKIE, pinnedZone, {
+    path: "/",
+    sameSite: "lax",
+  });
+
+  return pinned;
 };

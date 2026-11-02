@@ -50,13 +50,6 @@ const withViewerTimezone = (
       path: "/",
       sameSite: "lax",
     });
-  } else if (process.env.NODE_ENV === "development") {
-    // Nothing here writes the cookie but a stand-in, so a value left behind by
-    // an earlier `DEV_TIMEZONE` run would outlive the variable and quietly keep
-    // answering. Development has one source — the variable, or the fallbacks —
-    // and this is what makes unsetting it return to Brisbane. Never in a
-    // deployment, where an absent header must leave the cookie alone.
-    response.cookies.delete(TIMEZONE_COOKIE);
   }
 
   return response;
