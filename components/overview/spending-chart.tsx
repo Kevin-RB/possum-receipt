@@ -1,9 +1,12 @@
 "use client";
 
 import "temporal-polyfill/global";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
+import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
+import { DrilldownPanel } from "@/components/overview/drilldown-panel";
+import { useChartDrilldown } from "@/components/overview/use-chart-drilldown";
 import {
   Card,
   CardContent,
@@ -17,23 +20,15 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import type { ChartConfig } from "@/components/ui/chart";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { sumDailySpending, windowDays } from "@/lib/overview";
-import type { SpendingInput } from "@/lib/overview";
+import { rangeGrain, rangeLabel, spendingByRange } from "@/lib/overview";
+import type { OverviewReceipt } from "@/lib/overview";
 import {
   currencyFormatter,
-  RANGE_ITEMS,
-  RANGE_LABELS,
-  RANGE_MONTHS,
+  formatDayTick,
+  formatDayTooltipLabel,
+  formatMonthTick,
+  formatMonthTooltipLabel,
 } from "@/lib/overview-chart";
-import type { RangeKey } from "@/lib/overview-chart";
 
 const chartConfig = {
   total: {
@@ -42,36 +37,25 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-const formatDayTick = (value: unknown) =>
-  Temporal.PlainDate.from(String(value)).toLocaleString("en-AU", {
-    day: "numeric",
-    month: "short",
-  });
-
-const formatDayTooltipLabel = (value: unknown) =>
-  Temporal.PlainDate.from(String(value)).toLocaleString("en-AU", {
-    day: "numeric",
-    month: "short",
-    weekday: "short",
-  });
-
 export const SpendingChart = ({
   receipts,
   today,
 }: {
-  receipts: SpendingInput[];
+  receipts: OverviewReceipt[];
   /** The viewer's day, resolved on the server so both renders agree. */
   today: string;
 }) => {
-  const [range, setRange] = useState<RangeKey>("30-days");
+  const { day, drilldown, range, setRange, toggle } = useChartDrilldown(
+    receipts,
+    today
+  );
 
-  const day = useMemo(() => Temporal.PlainDate.from(today), [today]);
+  const data = useMemo(
+    () => spendingByRange(receipts, range, day),
+    [receipts, range, day]
+  );
 
-  const data = useMemo(() => {
-    const months = RANGE_MONTHS[range];
-    const days = months === null ? 30 : windowDays(day, months);
-    return sumDailySpending(receipts, days, day);
-  }, [receipts, range, day]);
+  const monthly = rangeGrain(range) === "month";
 
   return (
     <Card className="w-full">
@@ -79,32 +63,20 @@ export const SpendingChart = ({
         <div className="flex flex-col gap-1">
           <CardTitle>Spending</CardTitle>
           <CardDescription>
-            Total spent in the last {RANGE_LABELS[range]}
+            Total spent in the last {rangeLabel(range)}. Select a bar for the
+            receipts behind it.
           </CardDescription>
         </div>
-        <Select
-          items={RANGE_ITEMS}
-          onValueChange={(value) => setRange(value as RangeKey)}
+        <ChartPeriodSelect
+          label="Spending period"
+          onChange={setRange}
           value={range}
-        >
-          <SelectTrigger aria-label="Spending period" size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {Object.entries(RANGE_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        />
       </CardHeader>
       <CardContent>
         <ChartContainer
+          className="aspect-auto h-100 w-full sm:h-75"
           config={chartConfig}
-          className="aspect-auto h-75 w-full"
         >
           <BarChart
             accessibilityLayer
@@ -119,12 +91,14 @@ export const SpendingChart = ({
               axisLine={false}
               dataKey="label"
               minTickGap={32}
-              tickFormatter={formatDayTick}
+              tick={{ fontSize: 11 }}
+              tickFormatter={monthly ? formatMonthTick : formatDayTick}
               tickLine={false}
               tickMargin={8}
             />
             <YAxis
               axisLine={false}
+              tick={{ fontSize: 11 }}
               tickFormatter={(value) => currencyFormatter.format(Number(value))}
               tickLine={false}
               tickMargin={8}
@@ -133,13 +107,29 @@ export const SpendingChart = ({
               content={
                 <ChartTooltipContent
                   formatter={(value) => currencyFormatter.format(Number(value))}
-                  labelFormatter={formatDayTooltipLabel}
+                  labelFormatter={
+                    monthly ? formatMonthTooltipLabel : formatDayTooltipLabel
+                  }
                 />
               }
             />
-            <Bar dataKey="total" fill="var(--color-total)" />
+            <Bar
+              className="cursor-pointer"
+              dataKey="total"
+              fill="var(--color-total)"
+              onClick={(entry) => {
+                // Not the handler's `index`: recharts filters zero-length
+                // bars out of the rendered slice, so that index counts the
+                // bars drawn, not the days in `data`.
+                const datum = data[entry.originalDataIndex];
+                if (datum) {
+                  toggle(datum.bucket);
+                }
+              }}
+            />
           </BarChart>
         </ChartContainer>
+        {drilldown ? <DrilldownPanel drilldown={drilldown} /> : null}
       </CardContent>
     </Card>
   );

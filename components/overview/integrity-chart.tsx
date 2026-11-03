@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { ChevronDown } from "lucide-react";
+import { useMemo, useState } from "react";
 import {
   Label,
   PolarAngleAxis,
@@ -9,6 +10,8 @@ import {
   RadialBarChart,
 } from "recharts";
 
+import { DrilldownPanel } from "@/components/overview/drilldown-panel";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -23,7 +26,13 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import type { ChartConfig } from "@/components/ui/chart";
-import type { IntegrityInput } from "@/lib/overview";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { integritySummary, resolveBucket } from "@/lib/overview";
+import type { OverviewReceipt } from "@/lib/overview";
 
 const chartConfig = {
   warnings: {
@@ -62,13 +71,22 @@ const CenterLabel = ({ warnings, viewBox }: CenterLabelProps) => {
 export const IntegrityChart = ({
   receipts,
 }: {
-  receipts: IntegrityInput[];
+  receipts: OverviewReceipt[];
 }) => {
-  const warnings = useMemo(
-    () => receipts.filter((receipt) => receipt.hasIntegrityWarning).length,
+  const [open, setOpen] = useState(false);
+
+  // The count, the datum and the receipt list come from one call, so "N of M
+  // flagged" and the disclosure cannot disagree.
+  const { datum, flagged, total } = useMemo(
+    () => integritySummary(receipts),
     [receipts]
   );
-  const total = receipts.length;
+  const drilldown = useMemo(
+    () => resolveBucket(datum.bucket, flagged),
+    [datum, flagged]
+  );
+
+  const warnings = flagged.length;
   const clean = total > 0 && warnings === 0;
 
   const data = [{ name: "warnings", warnings }];
@@ -122,10 +140,26 @@ export const IntegrityChart = ({
         </ChartContainer>
       </CardContent>
       <CardFooter className="flex-col">
-        <div className="flex items-center gap-2 leading-none font-medium">
-          {warnings.toLocaleString()} of {total.toLocaleString()} flagged
-        </div>
-        <div className="text-muted-foreground mt-2 leading-none">
+        <Collapsible
+          className="flex w-full flex-col items-center"
+          onOpenChange={setOpen}
+          open={open}
+        >
+          <CollapsibleTrigger
+            disabled={warnings === 0}
+            render={<Button className="w-full" size="sm" variant="ghost" />}
+          >
+            {warnings.toLocaleString()} of {total.toLocaleString()} flagged
+            <ChevronDown
+              className={open ? "rotate-180" : undefined}
+              data-icon="inline-end"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="w-full">
+            <DrilldownPanel drilldown={drilldown} />
+          </CollapsibleContent>
+        </Collapsible>
+        <div className="text-muted-foreground mt-2 text-center leading-none">
           Line items do not sum to the stated total
         </div>
       </CardFooter>

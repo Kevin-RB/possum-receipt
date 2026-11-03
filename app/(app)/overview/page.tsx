@@ -1,25 +1,11 @@
-import { z } from "zod";
-
 import { CategorySpendingChart } from "@/components/overview/category-spending-chart";
 import { IntegrityChart } from "@/components/overview/integrity-chart";
 import { MerchantSpendingChart } from "@/components/overview/merchant-spending-chart";
 import { SpendingChart } from "@/components/overview/spending-chart";
 import { requireSession } from "@/lib/auth/dal";
-import { listDoneReceipts, spendByCategoryByDay } from "@/lib/db";
-import { receiptSelectSchema } from "@/lib/db/schema/receipt";
-import type { ReceiptSelect } from "@/lib/db/schema/receipt";
+import { listOverviewReceipts } from "@/lib/db";
+import { overviewWindow } from "@/lib/overview";
 import { viewerToday } from "@/lib/viewer";
-
-const CATEGORY_HISTORY_DAYS = 95;
-
-const getReceipts = async (ownerId: string): Promise<ReceiptSelect[]> => {
-  const receipts = await listDoneReceipts(ownerId);
-  const parsed = receiptSelectSchema.array().safeParse(receipts);
-  if (!parsed.success) {
-    throw new Error(z.prettifyError(parsed.error));
-  }
-  return parsed.data;
-};
 
 const OverviewPage = async () => {
   const session = await requireSession();
@@ -31,37 +17,22 @@ const OverviewPage = async () => {
   const today = await viewerToday(session.user.timezone);
   const todayISO = today.toString();
 
-  const [receipts, categorySpend] = await Promise.all([
-    getReceipts(session.user.id),
-    spendByCategoryByDay(session.user.id, CATEGORY_HISTORY_DAYS, today),
-  ]);
+  // One bounded query, carrying the line items with the receipts: the charts
+  // aggregate it in the browser and each drill-down filters the same array, so
+  // a panel's total is the bar's total by construction.
+  const receipts = await listOverviewReceipts(
+    session.user.id,
+    overviewWindow(today)
+  );
 
   return (
     <main className="container mx-auto flex flex-col gap-6 p-6">
       <h1 className="text-2xl font-bold">Overview</h1>
-      <SpendingChart
-        receipts={receipts.map(({ total, transactionDateTime }) => ({
-          total,
-          transactionDateTime,
-        }))}
-        today={todayISO}
-      />
-      <CategorySpendingChart rows={categorySpend} today={todayISO} />
+      <SpendingChart receipts={receipts} today={todayISO} />
+      <CategorySpendingChart receipts={receipts} today={todayISO} />
       <div className="grid gap-6 lg:grid-cols-2">
-        <MerchantSpendingChart
-          receipts={receipts.map(
-            ({ total, transactionDateTime, merchantName }) => ({
-              merchantName,
-              total,
-              transactionDateTime,
-            })
-          )}
-        />
-        <IntegrityChart
-          receipts={receipts.map(({ hasIntegrityWarning }) => ({
-            hasIntegrityWarning,
-          }))}
-        />
+        <MerchantSpendingChart receipts={receipts} today={todayISO} />
+        <IntegrityChart receipts={receipts} />
       </div>
     </main>
   );
