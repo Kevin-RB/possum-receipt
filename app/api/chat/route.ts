@@ -8,8 +8,8 @@ import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
 import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
 import { reportError, USER_ERROR } from "@/lib/errors";
-import { resolveToday, resolveTimezone } from "@/lib/time";
-import { viewerTimezone } from "@/lib/viewer";
+import { resolveToday } from "@/lib/time";
+import { viewerZone } from "@/lib/viewer";
 
 /** The app runs against a local model, so latency is bound by OCR-free local inference. */
 export const maxDuration = 60;
@@ -45,15 +45,11 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid messages." }, { status: 400 });
   }
 
-  // The same chain the pages walk, in the same order: the edge, then the
-  // account. Asking the same sources in the same order is what keeps the
-  // assistant and the charts on the same day. A chat-only candidate would be a
-  // second source for one surface, which is exactly how the two disagree — the
-  // browser's zone is already on the request as `cf-timezone`.
-  const timezone = resolveTimezone(
-    await viewerTimezone(),
-    session.user.timezone
-  );
+  // The same chain the pages walk, through the same function — not a second
+  // composition of it, which is how the assistant and the charts end up on
+  // different days. A chat-only candidate would be the same mistake in the
+  // other direction: the browser's zone is already on the request.
+  const timezone = await viewerZone(session.user.timezone);
 
   const agent = await createChatAgent(
     session.user.id,

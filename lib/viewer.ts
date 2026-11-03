@@ -54,10 +54,13 @@ export const viewerTimezone = async (): Promise<string | undefined> => {
 };
 
 /**
- * The one zone a render should use: the edge's, then the account's, then the
- * constant. Everything that needs a zone in a request — the day, a pending
- * receipt's upload time — reads this, so no caller can pick a different
- * precedence and disagree with the page beside it.
+ * The one zone a request should use: the edge's, then the account's, then the
+ * constant.
+ *
+ * Everything that needs a zone reads this — the day, a pending receipt's upload
+ * time, the assistant's prompt — and nothing composes the chain itself. A
+ * second composition is how two surfaces end up answering "which day is it"
+ * differently, so `resolveTimezone` is called here and nowhere else.
  */
 export const viewerZone = async (
   accountTimezone?: string | null
