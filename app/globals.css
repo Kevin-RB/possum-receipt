@@ -275,6 +275,100 @@
   transition-duration: 280ms;
 }
 
+/* The drill-down's rows land in sequence when a chart datum is opened — the
+   same ripple the phone's receipt list uses, tightened for a panel that opens
+   under the cursor: 30ms apart, capped at the sixth row, so a long list never
+   queues behind its own tail. Rows are interactive from the first frame.
+
+   Opacity only, deliberately. These rows live in a capped scroll container,
+   and a transformed descendant still contributes its transformed border box to
+   the scrollable overflow area — so the 6px travel this used to have pushed a
+   list that sat within 6px of the cap over it, sprouting a scrollbar for the
+   length of the entrance and dropping it again: a flash at the edge of the
+   list the reader is about to scroll, and a width jump under the amounts. The
+   panel above still rises (`enter-rise-sm`), which is outside the scroller and
+   so cannot change its height. */
+.drilldown-rows > * {
+  transition: opacity 180ms var(--ease-out);
+  transition-delay: calc(min(var(--i, 0), 5) * 30ms);
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+/* A chart datum that is not the open one steps back, so the panel beneath the
+   chart still has a provenance once the pointer has left the mark that opened
+   it. Paint-only — `fill-opacity` reflows nothing — so this needs no
+   reduced-motion branch: nothing moves, only colour. */
+[data-slot="chart"] .recharts-rectangle,
+[data-slot="chart"] .recharts-sector {
+  transition: fill-opacity 150ms var(--ease-out);
+}
+
+/* The integrity card's disclosure grows into its content instead of snapping:
+   the drill-down inside fades in, and without the height bridge the panel
+   lands before the space it needs exists.
+
+   Keyframes rather than a `height` transition. Base UI only bridges a panel it
+   can see animating — it measures one stop of the travel into
+   `--collapsible-panel-height` and reads the panel's computed animation to
+   decide how long to stay mounted — and against this version a `transition`
+   rule is never detected, so the panel jumped. `data-open` / `data-closed`
+   arrive in the same commit as the measurement, and the animation runs from
+   there.
+
+   Scoped to this card on purpose. The chat's trace uses the same primitive with
+   content that streams while open, where a height animation would fight every
+   token that arrives. */
+.drilldown-disclosure [data-slot="collapsible-content"] {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+}
+
+/* Gated, not overridden. The attribute selectors below are (0,3,0), so a
+   reduced-motion rule outside the media query could never outrank them however
+   late it appears — specificity is compared before source order. Leaving the
+   animation undeclared under `reduce` also means Base UI reads no animation and
+   opens the panel instantly instead of waiting 200ms for one. */
+@media (prefers-reduced-motion: no-preference) {
+  .drilldown-disclosure [data-slot="collapsible-content"][data-open] {
+    animation: drilldown-open 200ms var(--ease-out);
+  }
+
+  .drilldown-disclosure [data-slot="collapsible-content"][data-closed] {
+    animation: drilldown-close 200ms var(--ease-out);
+  }
+}
+
+@keyframes drilldown-open {
+  from {
+    height: 0;
+  }
+
+  to {
+    height: var(--collapsible-panel-height);
+  }
+}
+
+@keyframes drilldown-close {
+  from {
+    height: var(--collapsible-panel-height);
+  }
+
+  to {
+    height: 0;
+  }
+}
+
+/* The list is capped, so it needs a scrollbar — but a default one is a slab of
+   chrome inside a small panel. Thin, and drawn in the border colour so it reads
+   as part of the surface. */
+.drilldown-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
 /* The OCR transcript is a native `<details>` in a server component, so the
    opening is bridged in CSS rather than by adding a client accordion. The
    `@supports` gate is the fallback: browsers without keyword interpolation
@@ -327,6 +421,11 @@
     @starting-style {
       translate: none;
     }
+  }
+
+  .drilldown-rows > * {
+    transition-duration: 150ms;
+    transition-delay: 0ms;
   }
 
   .transcript-details::details-content {
