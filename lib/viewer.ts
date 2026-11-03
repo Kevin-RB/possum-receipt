@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 
-import { isTimezone, resolveToday } from "@/lib/time";
+import { isTimezone, resolveToday, resolveTimezone } from "@/lib/time";
 import { warnOnce } from "@/lib/warn-once";
 
 /**
@@ -33,7 +33,7 @@ const devTimezone = (): string | undefined => {
  * so the absence is worth one line in the log rather than none: from then on,
  * "today" is the reader's home day instead of the day they are on.
  *
- * Server-only: both reads go through `next/headers`.
+ * Server-only: the read goes through `next/headers`.
  */
 export const viewerTimezone = async (): Promise<string | undefined> => {
   const requestHeaders = await headers();
@@ -54,6 +54,16 @@ export const viewerTimezone = async (): Promise<string | undefined> => {
 };
 
 /**
+ * The one zone a render should use: the edge's, then the account's, then the
+ * constant. Everything that needs a zone in a request — the day, a pending
+ * receipt's upload time — reads this, so no caller can pick a different
+ * precedence and disagree with the page beside it.
+ */
+export const viewerZone = async (
+  accountTimezone?: string | null
+): Promise<string> => resolveTimezone(await viewerTimezone(), accountTimezone);
+
+/**
  * The viewer's "today" for a server render: the zone the edge reported, then
  * the zone the account was created in, then the constant.
  *
@@ -65,4 +75,4 @@ export const viewerTimezone = async (): Promise<string | undefined> => {
 export const viewerToday = async (
   accountTimezone?: string | null
 ): Promise<Temporal.PlainDate> =>
-  resolveToday(await viewerTimezone(), accountTimezone);
+  resolveToday(await viewerZone(accountTimezone));

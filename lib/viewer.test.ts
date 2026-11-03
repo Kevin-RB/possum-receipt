@@ -21,7 +21,8 @@ vi.mock(import("next/headers"), () => ({
     }),
 }));
 
-const { viewerTimezone, viewerToday } = await import("@/lib/viewer");
+const { viewerTimezone, viewerToday, viewerZone } =
+  await import("@/lib/viewer");
 
 /** The calendar date at this instant in a zone, read independently. */
 const isoDayIn = (instant: number, timezone: string) =>
@@ -107,6 +108,28 @@ describe(viewerTimezone, () => {
     await viewerTimezone();
 
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe(viewerZone, () => {
+  beforeEach(() => {
+    request.header = undefined;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("resolves the chain once, for anything in the render that needs a zone", async () => {
+    request.header = "Pacific/Kiritimati";
+
+    await expect(viewerZone("Etc/GMT+12")).resolves.toBe("Pacific/Kiritimati");
+  });
+
+  it("never returns undefined, so callers cannot fall back on their own", async () => {
+    // A caller passing this to a formatter gets the same answer the page's
+    // "today" came from — never a second default that disagrees.
+    await expect(viewerZone(null)).resolves.toBe(DEFAULT_TIMEZONE);
   });
 });
 

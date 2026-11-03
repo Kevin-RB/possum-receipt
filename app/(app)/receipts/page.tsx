@@ -10,7 +10,8 @@ import { listReceipts } from "@/lib/db";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
 import { receiptSelectSchema } from "@/lib/db/schema/receipt";
 import { instantToWallClock } from "@/lib/receipt/datetime";
-import { viewerToday, viewerTimezone } from "@/lib/viewer";
+import { resolveToday } from "@/lib/time";
+import { viewerZone } from "@/lib/viewer";
 
 /**
  * A receipt with no extracted transaction datetime falls back to when it was
@@ -52,11 +53,14 @@ const getReceiptData = async (
 const ReceiptsPage = async () => {
   const session = await requireSession();
 
-  const [timezone, today] = await Promise.all([
-    viewerTimezone(),
-    viewerToday(session.user.timezone),
+  // One resolved zone for the render — the same precedence `today` uses — so a
+  // pending row's upload time is shown in the reader's zone rather than a fixed
+  // one, and a client-supplied header that is not a zone cannot throw here.
+  const timezone = await viewerZone(session.user.timezone);
+  const [receipts, today] = await Promise.all([
+    getReceiptData(session.user.id, timezone),
+    resolveToday(timezone),
   ]);
-  const receipts = await getReceiptData(session.user.id, timezone);
 
   return (
     <main className="container mx-auto flex flex-col gap-6 p-6">

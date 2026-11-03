@@ -24,9 +24,8 @@ const isZoneName = (value: string): boolean => {
 /**
  * Whether a value names a real IANA zone.
  *
- * The proxy uses it to decide whether a development override is a zone at all,
- * so a typo in an env var is ignored rather than written into a cookie that
- * every reader would then skip.
+ * `lib/viewer.ts` uses it to decide whether a development override is a zone at
+ * all, so a typo in an env var is ignored rather than travelling as one.
  */
 export const isTimezone = (value: unknown): value is string =>
   typeof value === "string" && isZoneName(value);
@@ -35,10 +34,10 @@ export const isTimezone = (value: unknown): value is string =>
  * The first candidate that names a real zone, or `DEFAULT_TIMEZONE`.
  *
  * Candidates arrive in priority order — the viewer's zone, then the account's.
- * They cross boundaries the app does not own (a cookie, a request body), so
- * every candidate is taken as unknown and one that names nothing is dropped
- * rather than thrown: a bad value must not crash a render, and the next one is
- * always worth trying.
+ * They cross boundaries the app does not own (a platform header, a stored
+ * column filled from a browser), so every candidate is taken as unknown and one
+ * that names nothing is dropped rather than thrown: a bad value must not crash
+ * a render, and the next one is always worth trying.
  */
 export const resolveTimezone = (...candidates: unknown[]): string =>
   candidates.find(isTimezone) ?? DEFAULT_TIMEZONE;
