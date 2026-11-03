@@ -297,6 +297,63 @@
   }
 }
 
+/* A chart datum that is not the open one steps back, so the panel beneath the
+   chart still has a provenance once the pointer has left the mark that opened
+   it. Paint-only — `fill-opacity` reflows nothing — so this needs no
+   reduced-motion branch: nothing moves, only colour. */
+[data-slot="chart"] .recharts-rectangle,
+[data-slot="chart"] .recharts-sector {
+  transition: fill-opacity 150ms var(--ease-out);
+}
+
+/* The integrity card's disclosure grows into its content instead of snapping:
+   the drill-down inside fades in, and without the height bridge the panel
+   lands before the space it needs exists.
+
+   Keyframes rather than a `height` transition. Base UI only bridges a panel it
+   can see animating — it measures one stop of the travel into
+   `--collapsible-panel-height` and reads the panel's computed animation to
+   decide how long to stay mounted — and against this version a `transition`
+   rule is never detected, so the panel jumped. `data-open` / `data-closed`
+   arrive in the same commit as the measurement, and the animation runs from
+   there.
+
+   Scoped to this card on purpose. The chat's trace uses the same primitive with
+   content that streams while open, where a height animation would fight every
+   token that arrives. */
+.drilldown-disclosure [data-slot="collapsible-content"] {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+}
+
+.drilldown-disclosure [data-slot="collapsible-content"][data-open] {
+  animation: drilldown-open 200ms var(--ease-out);
+}
+
+.drilldown-disclosure [data-slot="collapsible-content"][data-closed] {
+  animation: drilldown-close 200ms var(--ease-out);
+}
+
+@keyframes drilldown-open {
+  from {
+    height: 0;
+  }
+
+  to {
+    height: var(--collapsible-panel-height);
+  }
+}
+
+@keyframes drilldown-close {
+  from {
+    height: var(--collapsible-panel-height);
+  }
+
+  to {
+    height: 0;
+  }
+}
+
 /* The list is capped, so it needs a scrollbar — but a default one is a slab of
    chrome inside a small panel. Thin, and drawn in the border colour so it reads
    as part of the surface. */
@@ -362,6 +419,12 @@
   .drilldown-rows > * {
     transition-duration: 150ms;
     transition-delay: 0ms;
+  }
+
+  /* A box that grows over 200ms is the movement; there is no fade worth
+     keeping, so the disclosure opens instantly. */
+  .drilldown-disclosure [data-slot="collapsible-content"] {
+    animation: none;
   }
 
   .transcript-details::details-content {

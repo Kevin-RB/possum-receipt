@@ -31,7 +31,11 @@ import {
 } from "@/components/ui/chart";
 import { merchantSpending, rangeLabel } from "@/lib/overview";
 import type { ChartDatum, OverviewReceipt } from "@/lib/overview";
-import { PIE_PALETTE, currencyFormatter } from "@/lib/overview-chart";
+import {
+  PIE_PALETTE,
+  currencyFormatter,
+  datumOpacity,
+} from "@/lib/overview-chart";
 
 interface MerchantDatum extends ChartDatum {
   fill: string;
@@ -74,10 +78,6 @@ const renderPercentLabel = (props: PieLabelRenderProps) => (
   </text>
 );
 
-const renderSector = (props: PieSectorShapeProps) => (
-  <Sector {...props} fill={props.payload.fill} />
-);
-
 export const MerchantSpendingChart = ({
   receipts,
   today,
@@ -86,10 +86,20 @@ export const MerchantSpendingChart = ({
   /** The viewer's day, resolved on the server so both renders agree. */
   today: string;
 }) => {
-  const { drilldown, period, range, setRange, toggle } = useChartDrilldown(
-    receipts,
-    today
-  );
+  const { drilldown, period, range, selected, setRange, toggle } =
+    useChartDrilldown(receipts, today);
+
+  // `shape` rather than per-datum `Cell`s: recharts deprecated `Cell` in 3.x.
+  const renderSector = (props: PieSectorShapeProps) => {
+    const datum = props.payload as MerchantDatum | undefined;
+    return (
+      <Sector
+        {...props}
+        fill={props.payload.fill}
+        fillOpacity={datum ? datumOpacity(datum.bucket, selected) : 1}
+      />
+    );
+  };
 
   const data = useMemo(() => {
     const buckets = merchantSpending(receipts, period);

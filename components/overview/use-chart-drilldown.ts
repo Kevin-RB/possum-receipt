@@ -47,6 +47,7 @@ export const useChartDrilldown = (
     drilldown,
     period,
     range,
+    selected,
     /** Changing the period closes the panel: its rows belong to the old one. */
     setRange: (next: RangeKey) => {
       setRange(next);

@@ -1,4 +1,6 @@
 import "temporal-polyfill/global";
+import { bucketKey } from "@/lib/overview";
+import type { Bucket } from "@/lib/overview";
 
 /** Money as the overview renders it — one formatter, so every surface agrees. */
 export const currencyFormatter = new Intl.NumberFormat("en-AU", {
@@ -61,3 +63,23 @@ const LABEL_LIMIT = 18;
 
 export const truncateLabel = (value: string): string =>
   value.length <= LABEL_LIMIT ? value : `${value.slice(0, LABEL_LIMIT - 1)}…`;
+
+/**
+ * How faint an unselected datum draws while a drill-down is open.
+ *
+ * Low enough to read as "not the one", high enough that the chart still shows
+ * its shape — a 0.35 datum on a near-black card is shadow, not information.
+ */
+export const DIM_OPACITY = 0.4;
+
+/**
+ * How strongly a datum draws: the open one at full strength, the rest stepped
+ * back.
+ *
+ * Nothing moves — the dimming is what keeps the panel's provenance legible
+ * once the pointer has left the mark that opened it.
+ */
+export const datumOpacity = (bucket: Bucket, selected: Bucket | null): number =>
+  selected === null || bucketKey(selected) === bucketKey(bucket)
+    ? 1
+    : DIM_OPACITY;

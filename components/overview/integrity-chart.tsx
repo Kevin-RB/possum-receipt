@@ -140,25 +140,23 @@ export const IntegrityChart = ({
         </ChartContainer>
       </CardContent>
       <CardFooter className="flex-col">
-        <Collapsible
-          className="flex w-full flex-col items-center"
-          onOpenChange={setOpen}
-          open={open}
-        >
-          <CollapsibleTrigger
-            disabled={warnings === 0}
-            render={<Button className="w-full" size="sm" variant="ghost" />}
-          >
-            {warnings.toLocaleString()} of {total.toLocaleString()} flagged
-            <ChevronDown
-              className={open ? "rotate-180" : undefined}
-              data-icon="inline-end"
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent className="w-full">
-            <DrilldownPanel drilldown={drilldown} />
-          </CollapsibleContent>
-        </Collapsible>
+        <div className="drilldown-disclosure w-full">
+          <Collapsible onOpenChange={setOpen} open={open}>
+            <CollapsibleTrigger
+              disabled={warnings === 0}
+              render={<Button className="w-full" size="sm" variant="ghost" />}
+            >
+              {warnings.toLocaleString()} of {total.toLocaleString()} flagged
+              <ChevronDown
+                className={open ? "rotate-180" : undefined}
+                data-icon="inline-end"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="w-full">
+              <DrilldownPanel drilldown={drilldown} />
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
         <div className="text-muted-foreground mt-2 text-center leading-none">
           Line items do not sum to the stated total
         </div>

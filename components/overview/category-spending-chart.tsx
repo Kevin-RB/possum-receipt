@@ -2,7 +2,15 @@
 
 import "temporal-polyfill/global";
 import { useMemo } from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Rectangle,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { BarShapeProps } from "recharts";
 
 import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
 import { DrilldownPanel } from "@/components/overview/drilldown-panel";
@@ -21,8 +29,12 @@ import {
 } from "@/components/ui/chart";
 import type { ChartConfig } from "@/components/ui/chart";
 import { categorySpending, rangeLabel } from "@/lib/overview";
-import type { OverviewReceipt } from "@/lib/overview";
-import { currencyFormatter, truncateLabel } from "@/lib/overview-chart";
+import type { ChartDatum, OverviewReceipt } from "@/lib/overview";
+import {
+  currencyFormatter,
+  datumOpacity,
+  truncateLabel,
+} from "@/lib/overview-chart";
 
 const chartConfig = {
   total: {
@@ -39,15 +51,29 @@ export const CategorySpendingChart = ({
   /** The viewer's day, resolved on the server so both renders agree. */
   today: string;
 }) => {
-  const { drilldown, period, range, setRange, toggle } = useChartDrilldown(
-    receipts,
-    today
-  );
+  const { drilldown, period, range, selected, setRange, toggle } =
+    useChartDrilldown(receipts, today);
 
   const data = useMemo(
     () => categorySpending(receipts, period),
     [receipts, period]
   );
+
+  // `shape` rather than per-datum `Cell`s: recharts deprecated `Cell` in 3.x.
+  const renderBar = (props: BarShapeProps) => {
+    const datum = props.payload as ChartDatum | undefined;
+    return (
+      <Rectangle
+        fill={props.fill}
+        fillOpacity={datum ? datumOpacity(datum.bucket, selected) : 1}
+        height={props.height}
+        radius={props.radius}
+        width={props.width}
+        x={props.x}
+        y={props.y}
+      />
+    );
+  };
 
   return (
     <Card className="w-full">
@@ -121,6 +147,7 @@ export const CategorySpendingChart = ({
                   className="cursor-pointer"
                   dataKey="total"
                   fill="var(--color-total)"
+                  shape={renderBar}
                   onClick={(entry) => {
                     // Not the handler's `index`: recharts filters zero-length
                     // bars out of the rendered slice, so that index counts the
