@@ -277,18 +277,23 @@
 
 /* The drill-down's rows land in sequence when a chart datum is opened — the
    same ripple the phone's receipt list uses, tightened for a panel that opens
-   under the cursor: 30ms apart, 6px of travel, capped at the sixth row, so a
-   long list never queues behind its own tail. Rows are interactive from the
-   first frame; the entrance is opacity and position only. */
+   under the cursor: 30ms apart, capped at the sixth row, so a long list never
+   queues behind its own tail. Rows are interactive from the first frame.
+
+   Opacity only, deliberately. These rows live in a capped scroll container,
+   and a transformed descendant still contributes its transformed border box to
+   the scrollable overflow area — so the 6px travel this used to have pushed a
+   list that sat within 6px of the cap over it, sprouting a scrollbar for the
+   length of the entrance and dropping it again: a flash at the edge of the
+   list the reader is about to scroll, and a width jump under the amounts. The
+   panel above still rises (`enter-rise-sm`), which is outside the scroller and
+   so cannot change its height. */
 .drilldown-rows > * {
-  transition:
-    opacity 180ms var(--ease-out),
-    translate 180ms var(--ease-out);
+  transition: opacity 180ms var(--ease-out);
   transition-delay: calc(min(var(--i, 0), 5) * 30ms);
 
   @starting-style {
     opacity: 0;
-    translate: 0 6px;
   }
 }
 
@@ -355,12 +360,8 @@
   }
 
   .drilldown-rows > * {
-    transition: opacity 150ms ease;
+    transition-duration: 150ms;
     transition-delay: 0ms;
-
-    @starting-style {
-      translate: none;
-    }
   }
 
   .transcript-details::details-content {
