@@ -1,17 +1,37 @@
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 
-import { resolveToday, TIMEZONE_COOKIE } from "@/lib/time";
+import { isTimezone, resolveToday } from "@/lib/time";
+import { warnOnce } from "@/lib/warn-once";
+
+/**
+ * The zone to pretend the viewer is in, in local development only.
+ *
+ * Local requests bypass Cloudflare, so `cf-timezone` never exists here and the
+ * viewer path can only ever fall back. `DEV_TIMEZONE` stands in for the edge —
+ * `DEV_TIMEZONE=America/Bogota pnpm dev` — and every surface then resolves the
+ * same way it does in a deployment.
+ *
+ * Two guards: the check is for `development` exactly, so `pnpm start` and every
+ * deployed build (itself built with `NODE_ENV=production`) ignore it, and the
+ * value must name a real zone or a typo would travel as one.
+ */
+const devTimezone = (): string | undefined => {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  const configured = process.env.DEV_TIMEZONE;
+  return isTimezone(configured) ? configured : undefined;
+};
 
 /**
  * The zone the edge reported for this request, or `undefined` when nothing did.
  *
- * Two transports, in order of freshness:
- *
- * 1. the `cf-timezone` request header — Cloudflare adds it to the request
- *    itself, so it is right on the *first* render after someone travels;
- * 2. the `tz` cookie `proxy.ts` writes from that header — for a request that
- *    arrives without it (local development, LAN access, a future proxy). The
- *    cookie is one request behind, which is why the header is asked first.
+ * `cf-timezone` comes from Cloudflare's **Add visitor location headers** Managed
+ * Transform, which is per zone and off by default. When it is missing in a
+ * deployment nothing errors — every surface falls back to the account's zone —
+ * so the absence is worth one line in the log rather than none: from then on,
+ * "today" is the reader's home day instead of the day they are on.
  *
  * Server-only: both reads go through `next/headers`.
  */
@@ -23,8 +43,14 @@ export const viewerTimezone = async (): Promise<string | undefined> => {
     return fromEdge;
   }
 
-  const cookieStore = await cookies();
-  return cookieStore.get(TIMEZONE_COOKIE)?.value;
+  if (process.env.NODE_ENV === "production") {
+    warnOnce(
+      "viewer-timezone",
+      "[viewer-timezone] no cf-timezone header: pages fall back to the account's zone. Enable Cloudflare's Add visitor location headers Managed Transform for this zone."
+    );
+  }
+
+  return devTimezone();
 };
 
 /**

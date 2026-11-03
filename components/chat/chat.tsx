@@ -27,7 +27,6 @@ import {
   useMessageScrollerScrollable,
 } from "@/components/ui/message-scroller";
 import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
-import { browserTimezone } from "@/lib/browser-timezone";
 import { chatErrorText } from "@/lib/chat/errors";
 import { greetingFor } from "@/lib/chat/greeting";
 import { isLastStreaming } from "@/lib/chat/message-parts";
@@ -103,13 +102,10 @@ export const Chat = ({ firstName }: { firstName: string }) => {
     // the unanswered tool call is the signal that the agent is waiting.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     throttle: THROTTLE_MS,
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      // The browser is the clock in front of the reader, and a function is read
-      // per request: the edge's `tz` cookie is only a copy taken on the last
-      // page load, and this is where the viewer actually is now.
-      body: () => ({ timezone: browserTimezone() }),
-    }),
+    // No body: the browser's zone is already on the request as `cf-timezone`,
+    // put there by the edge. Sending it again would make the chat a second
+    // source for the same question.
+    transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
 
   const busy = status === "submitted" || status === "streaming";

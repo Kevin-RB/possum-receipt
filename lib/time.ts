@@ -7,14 +7,6 @@ import "temporal-polyfill/global";
 export const DEFAULT_TIMEZONE = "Australia/Brisbane";
 
 /**
- * Where the edge's `cf-timezone` header lands for server code to read.
- *
- * Transport, not a preference: `proxy.ts` rewrites it on every page request, so
- * it follows the viewer when they travel and is never a setting to edit.
- */
-export const TIMEZONE_COOKIE = "tz";
-
-/**
  * Whether a value names a real IANA zone. `Temporal` validates the name, which
  * an `Intl` lookup would also do, but this is the value that is about to be
  * used as a zone, so it is the thing that gets asked.

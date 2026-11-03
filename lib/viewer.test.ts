@@ -1,29 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_TIMEZONE } from "@/lib/time";
 
 /**
- * The chain as the pages actually walk it: the zone Cloudflare puts on the
- * request, then the copy `proxy.ts` keeps in the `tz` cookie, then the zone the
- * account was created in, then the constant. Both `next/headers` reads are
- * stubbed; everything below them is the real resolver.
+ * The chain as every surface walks it: the zone Cloudflare puts on the request,
+ * then the zone the account was created in, then the constant. One chain, one
+ * order — the assistant and the charts read the same function, so they cannot
+ * disagree about the day.
+ *
+ * `next/headers` is stubbed; everything below it is the real resolver.
  */
-const edge = vi.hoisted(() => ({
-  cookie: undefined as string | undefined,
-  header: undefined as string | undefined,
-}));
+const request = vi.hoisted(() => ({ header: undefined as string | undefined }));
 
-// @ts-expect-error only `get` is reached; the rest of the store is unused
+// @ts-expect-error only `get` is reached; the rest of `Headers` is unused
 vi.mock(import("next/headers"), () => ({
-  cookies: () =>
-    Promise.resolve({
-      get: (name: string) =>
-        name === "tz" && edge.cookie ? { value: edge.cookie } : undefined,
-    }),
   headers: () =>
     Promise.resolve({
       get: (name: string) =>
-        name === "cf-timezone" ? (edge.header ?? null) : null,
+        name === "cf-timezone" ? (request.header ?? null) : null,
     }),
 }));
 
@@ -45,77 +39,104 @@ const todayIn = async (accountZone?: string | null): Promise<string> => {
 
 describe(viewerTimezone, () => {
   beforeEach(() => {
-    edge.header = undefined;
-    edge.cookie = undefined;
+    request.header = undefined;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("reads the header the edge put on this request", async () => {
     // The header is per request, so it is right on the first render after
-    // someone travels — before any cookie could have been rewritten.
-    edge.header = "Pacific/Kiritimati";
+    // someone travels — nothing has to be written first.
+    request.header = "Pacific/Kiritimati";
 
     await expect(viewerTimezone()).resolves.toBe("Pacific/Kiritimati");
   });
 
-  it("prefers the header over an older cookie", async () => {
-    edge.header = "Pacific/Kiritimati";
-    edge.cookie = "America/Bogota";
-
-    await expect(viewerTimezone()).resolves.toBe("Pacific/Kiritimati");
-  });
-
-  it("uses the cookie when the request carries no header", async () => {
-    // Local development has no Cloudflare, and neither does a LAN request.
-    edge.cookie = "America/Bogota";
-
-    await expect(viewerTimezone()).resolves.toBe("America/Bogota");
-  });
-
-  it("skips an empty header the way it skips an empty cookie", async () => {
-    // Cloudflare can send the header with no value when it cannot place the IP.
-    edge.header = "";
-    edge.cookie = "America/Bogota";
-
-    await expect(viewerTimezone()).resolves.toBe("America/Bogota");
-  });
-
-  it("has no zone when neither transport carried one", async () => {
+  it("has no zone when the header is absent, as in local development", async () => {
     await expect(viewerTimezone()).resolves.toBeUndefined();
+  });
+
+  it("stands in for the edge when development was told a zone", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("DEV_TIMEZONE", "America/Bogota");
+
+    await expect(viewerTimezone()).resolves.toBe("America/Bogota");
+  });
+
+  it("ignores the stand-in outside development", async () => {
+    // A deployment is built with NODE_ENV=production and a client cannot set an
+    // environment variable, so the stand-in exists only on a dev machine.
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEV_TIMEZONE", "America/Bogota");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(viewerTimezone()).resolves.toBeUndefined();
+  });
+
+  it("ignores a stand-in that does not name a zone", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("DEV_TIMEZONE", "Not/AZone");
+
+    await expect(viewerTimezone()).resolves.toBeUndefined();
+  });
+
+  it("says so in production when the edge reported nothing", async () => {
+    // Pages then answer from the account, which is invisible unless someone
+    // looks for it — the one place to make that visible is the log. The warning
+    // is once per process, so this needs its own module instance.
+    vi.stubEnv("NODE_ENV", "production");
+    vi.resetModules();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fresh = await import("@/lib/viewer");
+
+    await fresh.viewerTimezone();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("no cf-timezone header")
+    );
+  });
+
+  it("stays quiet when the header is there", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    request.header = "America/Bogota";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await viewerTimezone();
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
 describe(viewerToday, () => {
   beforeEach(() => {
-    edge.header = undefined;
-    edge.cookie = undefined;
+    request.header = undefined;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("prefers the viewer's zone over the account's", async () => {
     // The bug this pins: the account's zone is where the reader signed up, so
     // answering from it tells a traveller the date they left behind.
-    edge.header = "Pacific/Kiritimati";
+    request.header = "Pacific/Kiritimati";
 
     await expect(todayIn("Etc/GMT+12")).resolves.toBe(
       isoDayIn(Date.now(), "Pacific/Kiritimati")
     );
   });
 
-  it("falls back to the cookie when the header is absent", async () => {
-    edge.cookie = "Pacific/Kiritimati";
-
-    await expect(todayIn("Etc/GMT+12")).resolves.toBe(
-      isoDayIn(Date.now(), "Pacific/Kiritimati")
-    );
-  });
-
-  it("falls back to the account's zone when no transport carried one", async () => {
+  it("falls back to the account's zone when the edge reported none", async () => {
     await expect(todayIn("Pacific/Kiritimati")).resolves.toBe(
       isoDayIn(Date.now(), "Pacific/Kiritimati")
     );
   });
 
   it("falls back to the constant when nothing names a zone", async () => {
-    edge.cookie = "Not/AZone";
+    request.header = "Not/AZone";
 
     await expect(todayIn(null)).resolves.toBe(
       isoDayIn(Date.now(), DEFAULT_TIMEZONE)
