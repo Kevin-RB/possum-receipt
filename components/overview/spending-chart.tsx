@@ -55,16 +55,23 @@ const formatDayTooltipLabel = (value: unknown) =>
     weekday: "short",
   });
 
-export const SpendingChart = ({ receipts }: { receipts: SpendingInput[] }) => {
+export const SpendingChart = ({
+  receipts,
+  today,
+}: {
+  receipts: SpendingInput[];
+  /** The viewer's day, resolved on the server so both renders agree. */
+  today: string;
+}) => {
   const [range, setRange] = useState<RangeKey>("30-days");
 
-  const today = useMemo(() => Temporal.Now.plainDateISO(), []);
+  const day = useMemo(() => Temporal.PlainDate.from(today), [today]);
 
   const data = useMemo(() => {
     const months = RANGE_MONTHS[range];
-    const days = months === null ? 30 : windowDays(today, months);
-    return sumDailySpending(receipts, days, today);
-  }, [receipts, range, today]);
+    const days = months === null ? 30 : windowDays(day, months);
+    return sumDailySpending(receipts, days, day);
+  }, [receipts, range, day]);
 
   return (
     <Card className="w-full">

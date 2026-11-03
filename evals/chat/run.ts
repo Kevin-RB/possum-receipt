@@ -9,6 +9,7 @@ import { createChatAgent } from "@/lib/chat/agent";
 import { db } from "@/lib/db";
 import { FIXTURE_EMAIL } from "@/lib/db/fixture";
 import { user } from "@/lib/db/schema/auth";
+import { DEFAULT_TIMEZONE, resolveToday } from "@/lib/time";
 
 import type {
   Check,
@@ -249,7 +250,13 @@ const resolveOwnerId = async (): Promise<string> => {
 
 const main = async () => {
   const ownerId = await resolveOwnerId();
-  const agent = await createChatAgent(ownerId);
+  // No viewer behind an eval run, so the agent gets the same fallback zone the
+  // scenarios' date expectations are built from.
+  const agent = await createChatAgent(
+    ownerId,
+    resolveToday(DEFAULT_TIMEZONE),
+    DEFAULT_TIMEZONE
+  );
 
   console.log(
     `Chat evals: ${scenarios.length} scenarios x ${RUNS_PER_SCENARIO} runs`

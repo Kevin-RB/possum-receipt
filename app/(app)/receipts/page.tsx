@@ -10,8 +10,20 @@ import { listReceipts } from "@/lib/db";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
 import { receiptSelectSchema } from "@/lib/db/schema/receipt";
 import { instantToWallClock } from "@/lib/receipt/datetime";
+import { resolveToday } from "@/lib/time";
+import { viewerZone } from "@/lib/viewer";
 
-const normalizeReceipt = (receipt: ReceiptSelect): ReceiptTable => ({
+/**
+ * A receipt with no extracted transaction datetime falls back to when it was
+ * uploaded — as a wall clock in the **viewer's** zone, since that instant is a
+ * server event and this is the clock they are reading it against. A fixed zone
+ * here would show a pending receipt fifteen hours out for a reader in another
+ * country.
+ */
+const normalizeReceipt = (
+  receipt: ReceiptSelect,
+  timezone: string | undefined
+): ReceiptTable => ({
   hasIntegrityWarning: receipt.hasIntegrityWarning,
   id: receipt.id,
   merchantName: receipt.merchantName ?? "Unknown",
@@ -19,23 +31,36 @@ const normalizeReceipt = (receipt: ReceiptSelect): ReceiptTable => ({
   status: receipt.status as ReceiptTable["status"],
   total: receipt.total ?? 0,
   transactionDateTime:
-    receipt.transactionDateTime ?? instantToWallClock(receipt.createdAt),
+    receipt.transactionDateTime ??
+    instantToWallClock(receipt.createdAt, timezone),
 });
 
-const getReceiptData = async (ownerId: string): Promise<ReceiptTable[]> => {
+const getReceiptData = async (
+  ownerId: string,
+  timezone: string | undefined
+): Promise<ReceiptTable[]> => {
   const receipts = await listReceipts(ownerId);
   const parsed = receiptSelectSchema.array().safeParse(receipts);
   if (!parsed.success) {
     throw new Error(z.prettifyError(parsed.error));
   }
-  const normalizedReceipts = parsed.data.map(normalizeReceipt);
+  const normalizedReceipts = parsed.data.map((receipt) =>
+    normalizeReceipt(receipt, timezone)
+  );
   return normalizedReceipts;
 };
 
 const ReceiptsPage = async () => {
   const session = await requireSession();
 
-  const receipts = await getReceiptData(session.user.id);
+  // One resolved zone for the render — the same precedence `today` uses — so a
+  // pending row's upload time is shown in the reader's zone rather than a fixed
+  // one, and a client-supplied header that is not a zone cannot throw here.
+  const timezone = await viewerZone(session.user.timezone);
+  const [receipts, today] = await Promise.all([
+    getReceiptData(session.user.id, timezone),
+    resolveToday(timezone),
+  ]);
 
   return (
     <main className="container mx-auto flex flex-col gap-6 p-6">
@@ -57,7 +82,11 @@ const ReceiptsPage = async () => {
             and the whole page, wider than the window instead of scrolling
             inside the table's own container. */}
         <section className="mx-auto w-full [contain:inline-size]">
-          <DataTable columns={receiptColumns} data={receipts} />
+          <DataTable
+            columns={receiptColumns}
+            data={receipts}
+            today={today.toString()}
+          />
         </section>
       </ReceiptsRealtimeProvider>
     </main>

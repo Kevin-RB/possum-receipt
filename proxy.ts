@@ -10,6 +10,10 @@ export const proxy = (request: NextRequest) => {
   // read close to the data. Public paths are never redirected here: a stale
   // cookie must not bounce users away from /sign-in, or the page's own check
   // would send them back forever.
+  //
+  // Nothing about "today" belongs here: the viewer's zone is read straight from
+  // the request in `lib/viewer.ts`, and a middleware copy would only be a second
+  // place to forget to update.
   if (
     !PUBLIC_PATHS.has(request.nextUrl.pathname) &&
     !getSessionCookie(request)

@@ -21,6 +21,9 @@ const columns = columnHelper.columns([
   }),
 ]);
 
+/** Any day will do: this file is about paging, not the date filter. */
+const TODAY = "2026-10-07";
+
 const receipt = (index: number): ReceiptTable => ({
   hasIntegrityWarning: false,
   id: `receipt-${index}`,
@@ -45,6 +48,7 @@ const renderTable = (count: number) =>
       <DataTable
         columns={columns}
         data={Array.from({ length: count }, (_, index) => receipt(index))}
+        today={TODAY}
       />
     </ReceiptsRealtimeContext.Provider>
   );
@@ -109,6 +113,7 @@ describe(DataTable, () => {
           data={Array.from({ length: PAGE_SIZE * 2 }, (_, index) =>
             receipt(index)
           )}
+          today={TODAY}
         />
       </ReceiptsRealtimeContext.Provider>
     );
@@ -146,6 +151,7 @@ describe(DataTable, () => {
         <DataTable
           columns={columns}
           data={Array.from({ length: PAGE_SIZE }, (_, index) => receipt(index))}
+          today={TODAY}
         />
       </ReceiptsRealtimeContext.Provider>
     );

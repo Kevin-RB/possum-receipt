@@ -102,6 +102,9 @@ export const Chat = ({ firstName }: { firstName: string }) => {
     // the unanswered tool call is the signal that the agent is waiting.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     throttle: THROTTLE_MS,
+    // No body: the browser's zone is already on the request as `cf-timezone`,
+    // put there by the edge. Sending it again would make the chat a second
+    // source for the same question.
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
 

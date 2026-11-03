@@ -27,7 +27,7 @@ export const windowDays = (today: Temporal.PlainDate, months: number): number =>
 export const sumDailySpending = (
   receipts: SpendingInput[],
   days: number,
-  today = Temporal.Now.plainDateISO()
+  today: Temporal.PlainDate
 ): SpendingBucket[] => {
   const totals = new Map<string, number>();
 
@@ -87,7 +87,7 @@ export interface CategorySpendInput {
 export const sumSpendingByCategory = (
   rows: CategorySpendInput[],
   days: number,
-  today = Temporal.Now.plainDateISO()
+  today: Temporal.PlainDate
 ): SpendingBucket[] => {
   const start = today.subtract({ days: days - 1 });
   const totals = new Map<string, number>();

@@ -14,6 +14,10 @@ export const user = snakeCase.table("user", {
   image: text(),
   inviteCode: text(),
   name: text().notNull(),
+  // Where the account was created, captured at sign-up. Nullable: Better Auth
+  // writes it, but a row created before this column existed has no zone, and
+  // `resolveTimezone` treats that the same as one it cannot read.
+  timezone: text(),
   updatedAt: timestamp({ withTimezone: true })
     .notNull()
     .defaultNow()

@@ -8,6 +8,8 @@ import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
 import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
 import { reportError, USER_ERROR } from "@/lib/errors";
+import { resolveToday } from "@/lib/time";
+import { viewerZone } from "@/lib/viewer";
 
 /** The app runs against a local model, so latency is bound by OCR-free local inference. */
 export const maxDuration = 60;
@@ -43,7 +45,17 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid messages." }, { status: 400 });
   }
 
-  const agent = await createChatAgent(session.user.id);
+  // The same chain the pages walk, through the same function — not a second
+  // composition of it, which is how the assistant and the charts end up on
+  // different days. A chat-only candidate would be the same mistake in the
+  // other direction: the browser's zone is already on the request.
+  const timezone = await viewerZone(session.user.timezone);
+
+  const agent = await createChatAgent(
+    session.user.id,
+    resolveToday(timezone),
+    timezone
+  );
 
   return createAgentUIStreamResponse({
     abortSignal: request.signal,

@@ -8,12 +8,32 @@ const CATEGORIES = [
   { name: "Meat & Seafood", parentName: "Groceries" },
 ];
 
+/**
+ * The prompt is pure: the route resolves "today" from the viewer's clock and
+ * hands it in, so the date can be pinned here rather than assumed to be the
+ * one the suite happens to run on.
+ */
+const TODAY = Temporal.PlainDate.from("2026-10-07");
+const TIMEZONE = "America/Bogota";
+
 const count = (haystack: string, needle: string) =>
   haystack.split(needle).length - 1;
 
-const instructions = buildInstructions(CATEGORIES);
+const instructions = buildInstructions(CATEGORIES, TODAY, TIMEZONE);
 
 describe(buildInstructions, () => {
+  it("states the viewer's own date, weekday and zone", () => {
+    // The regression this pins, twice over. The date was the server's, read in
+    // a hardcoded Brisbane, so a viewer west of it was told tomorrow's date and
+    // answered "spend today" from a day that had barely started for them. The
+    // weekday was not stated at all, and the local model answered "Thursday,
+    // November 1, 2026" (a Sunday) — or copied "Wednesday" out of the format
+    // example below.
+    expect(instructions).toContain(
+      "Today is Wednesday, 2026-10-07 (America/Bogota)"
+    );
+  });
+
   it("leaks no tool-call markup into the prompt", () => {
     for (const fragment of [
       "<tool_call>",

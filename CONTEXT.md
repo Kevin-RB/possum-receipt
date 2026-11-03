@@ -32,6 +32,8 @@ A local-first web app that turns photos of paper receipts into structured, persi
 
 **Spending day**: The calendar day a receipt's transaction datetime falls on, read from the receipt itself rather than derived from the viewer's or the server's timezone. Every chart, filter and total groups by it, so a receipt never changes day because it was viewed from another country. _Avoid_: Bucket date, local date, chart day.
 
+**Today**: The calendar day the reader is on now — the date a trailing window ends, and the date the assistant is told. Read from the viewer's own zone: the `cf-timezone` header the edge adds, falling back to the account's zone, then to `Australia/Brisbane`. Every surface resolves that one chain in that one order, so the assistant and the charts cannot disagree about the day. Distinct from the spending day, which is stored on the receipt. _Avoid_: Current date, server date, receipt date.
+
 **Totals**: The money amounts stated on a receipt. The total is the amount paid and is required. The subtotal is the receipt's printed subtotal — the sum of the line items, GST-inclusive — and is present only when the receipt prints one. GST is the tax component included within the total, never an amount added to it, and is present only when the receipt states it. _Avoid_: Sum, grand total, amount.
 
 **Line item**: A single charge on a receipt, with a name, quantity, unit price, line total, and a kind of `product`, `surcharge`, or `discount`. A discount always has a negative line total (the sign follows the kind, never the other way round); a surcharge is a positive line item distinct from a product. _Avoid_: Item, entry, row.

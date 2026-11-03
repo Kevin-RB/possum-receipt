@@ -7,7 +7,6 @@ import { relations } from "@/lib/db/relations";
 import { categories as categoriesTable } from "@/lib/db/schema/category";
 import { receipts as receiptsTable } from "@/lib/db/schema/receipt";
 import { receiptItems as receiptItemsTable } from "@/lib/db/schema/receipt-item";
-import { RECEIPT_TIMEZONE } from "@/lib/receipt/datetime";
 
 import { DEFAULT_DATABASE_URL } from "./constants";
 
@@ -105,13 +104,15 @@ const categoryDayExpression = sql`(${receiptsTable.transactionDateTime})::date`;
 
 export const spendByCategoryByDay = async (
   ownerId: string,
-  days: number
+  days: number,
+  today: Temporal.PlainDate
 ): Promise<CategorySpendDay[]> => {
-  // Whole calendar days, inclusive of today. The stored value is already the
-  // receipt's local wall clock, so the day is the date part — no timezone
-  // conversion, and no rolling 24-hour window that would start at whatever
-  // time it happens to be now.
-  const today = Temporal.Now.plainDateISO(RECEIPT_TIMEZONE);
+  // Whole calendar days, inclusive of the viewer's today, which the page
+  // resolves once and shares with the charts — a query window and a chart
+  // window that disagree would leave the rightmost bar without its data. The
+  // stored value is already the receipt's local wall clock, so the day is the
+  // date part: no timezone conversion, and no rolling 24-hour window that
+  // would start at whatever time it happens to be now.
   const start = today.subtract({ days: days - 1 });
 
   return await db
