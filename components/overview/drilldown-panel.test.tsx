@@ -31,7 +31,8 @@ describe(DrilldownPanel, () => {
       ],
     });
 
-    expect(text).toContain("2 receipts · $412.30");
+    expect(text).toContain("2 receipts");
+    expect(text).toContain("$412.30");
     expect(text).toContain("Woolworths");
     expect(text).toContain("3 Nov 2026");
   });
@@ -61,7 +62,8 @@ describe(DrilldownPanel, () => {
   it("shows an empty state rather than nothing for an empty bucket", () => {
     const text = body({ kind: "receipts", rows: [] });
 
-    expect(text).toContain("0 receipts · $0.00");
+    expect(text).toContain("0 receipts");
+    expect(text).toContain("$0.00");
     expect(text).toContain("Nothing in this period to show.");
   });
 
@@ -84,7 +86,8 @@ describe(DrilldownPanel, () => {
       kind: "items",
     });
 
-    expect(text).toContain("2 line items · $20.50");
+    expect(text).toContain("2 line items");
+    expect(text).toContain("$20.50");
     expect(text).toContain("Sourdough");
     expect(text).toContain("Milk");
   });
@@ -131,6 +134,7 @@ describe(DrilldownPanel, () => {
     });
 
     expect(text).toContain("Unknown merchant");
-    expect(text).toContain("1 receipt · $12.50");
+    expect(text).toContain("1 receipt");
+    expect(text).toContain("$12.50");
   });
 });

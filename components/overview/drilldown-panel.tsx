@@ -1,13 +1,73 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 
 import { drilldownCount, drilldownTotal } from "@/lib/overview";
-import type { Drilldown } from "@/lib/overview";
+import type { Drilldown, ItemGroup, ReceiptRow } from "@/lib/overview";
 import { currencyFormatter } from "@/lib/overview-chart";
 import { formatReceiptShortDate } from "@/lib/receipt/datetime";
 
 const formatMoney = (value: number): string => currencyFormatter.format(value);
+
+/**
+ * The dotted run that carries the eye from a row's label to its amount.
+ *
+ * The amount belongs at the right edge — a column of figures is what makes a
+ * receipt scannable — but a bare gap leaves it floating a card's width away
+ * from the thing it prices. The leader joins the two without giving up the
+ * column.
+ */
+const Leader = () => (
+  <span
+    aria-hidden
+    className="border-foreground/15 mx-1 min-w-4 flex-1 self-baseline border-b border-dotted"
+  />
+);
+
+/** A whole row is the link, so hovering and pressing read as one target. */
+const ROW_CLASS =
+  "focus-visible:ring-ring/50 flex items-baseline gap-2 rounded-md px-2 py-2 text-sm transition-colors duration-150 hover:bg-foreground/5 focus-visible:ring-2 focus-visible:outline-none active:bg-foreground/10";
+
+const ReceiptLine = ({ row }: { row: ReceiptRow }) => (
+  <>
+    <span className="min-w-0 truncate font-medium">
+      {row.merchantName ?? "Unknown merchant"}
+    </span>
+    <span className="text-muted-foreground shrink-0 text-xs">
+      {formatReceiptShortDate(row.date)}
+    </span>
+    <Leader />
+    <span className="shrink-0 font-medium tabular-nums">
+      {formatMoney(row.total)}
+    </span>
+  </>
+);
+
+const Group = ({ group }: { group: ItemGroup }) => (
+  <>
+    <Link className={ROW_CLASS} href={`/receipts/${group.receipt.id}`}>
+      <span className="min-w-0 truncate font-medium">
+        {group.receipt.merchantName ?? "Unknown merchant"}
+      </span>
+      <span className="text-muted-foreground shrink-0 text-xs">
+        {formatReceiptShortDate(group.receipt.date)}
+      </span>
+    </Link>
+    <ul className="border-border mt-0.5 mb-1 flex flex-col border-l pl-2">
+      {group.items.map((item) => (
+        <li
+          className="flex items-baseline gap-2 py-1 pr-2 pl-3 text-sm"
+          key={item.id}
+        >
+          <span className="min-w-0 truncate">{item.name}</span>
+          <Leader />
+          <span className="tabular-nums">{formatMoney(item.lineTotal)}</span>
+        </li>
+      ))}
+    </ul>
+  </>
+);
 
 /**
  * The rows a chart datum was summed from.
@@ -18,79 +78,47 @@ const formatMoney = (value: number): string => currencyFormatter.format(value);
  */
 export const DrilldownPanel = ({ drilldown }: { drilldown: Drilldown }) => {
   const count = drilldownCount(drilldown);
-  const unit = drilldown.kind === "receipts" ? "receipt" : "line item";
+  const noun = drilldown.kind === "receipts" ? "receipt" : "line item";
 
   return (
-    <div className="border-border/60 mt-4 border-t pt-4">
-      <p className="text-sm font-medium">
-        {count.toLocaleString()} {unit}
-        {count === 1 ? "" : "s"} ·{" "}
-        <span className="tabular-nums">
+    <div className="enter-rise-sm bg-muted/40 ring-foreground/10 mt-4 rounded-lg p-2 ring-1">
+      <header className="flex items-baseline justify-between gap-3 px-2 pt-1 pb-2">
+        <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          {count.toLocaleString()} {noun}
+          {count === 1 ? "" : "s"}
+        </p>
+        <p className="text-base font-semibold tabular-nums">
           {formatMoney(drilldownTotal(drilldown))}
-        </span>
-      </p>
+        </p>
+      </header>
       {count === 0 ? (
-        <p className="text-muted-foreground py-6 text-center text-sm">
+        <p className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-6 text-center text-sm text-balance">
           Nothing in this period to show.
         </p>
       ) : (
         // Capped with an internal scroll: a day with fifty receipts must not
         // push the next chart off the page, and there is no pagination to page
         // through instead.
-        <div className="mt-2 max-h-64 overflow-y-auto pr-1">
+        <div className="drilldown-scroll max-h-64 overflow-y-auto overscroll-contain pr-1">
           {drilldown.kind === "receipts" ? (
-            <ul className="divide-border/60 divide-y">
-              {drilldown.rows.map((row) => (
-                <li key={row.id}>
-                  <Link
-                    className="hover:bg-muted/60 flex items-center justify-between gap-3 rounded-md px-2 py-2"
-                    href={`/receipts/${row.id}`}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate">
-                        {row.merchantName ?? "Unknown merchant"}
-                      </span>
-                      <span className="text-muted-foreground block text-xs">
-                        {formatReceiptShortDate(row.date)}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-sm tabular-nums">
-                      {formatMoney(row.total)}
-                    </span>
+            <ul className="drilldown-rows flex flex-col">
+              {drilldown.rows.map((row, index) => (
+                <li key={row.id} style={{ "--i": index } as CSSProperties}>
+                  <Link className={ROW_CLASS} href={`/receipts/${row.id}`}>
+                    <ReceiptLine row={row} />
                   </Link>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="flex flex-col gap-3">
-              {drilldown.groups.map((group) => (
-                <div key={group.receipt.id}>
-                  <Link
-                    className="hover:bg-muted/60 flex items-center justify-between gap-3 rounded-md px-2 py-1"
-                    href={`/receipts/${group.receipt.id}`}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">
-                        {group.receipt.merchantName ?? "Unknown merchant"}
-                      </span>
-                      <span className="text-muted-foreground block text-xs">
-                        {formatReceiptShortDate(group.receipt.date)}
-                      </span>
-                    </span>
-                  </Link>
-                  <ul className="mt-1 flex flex-col">
-                    {group.items.map((item) => (
-                      <li
-                        className="flex items-center justify-between gap-3 py-1 pl-3 text-sm"
-                        key={item.id}
-                      >
-                        <span className="min-w-0 truncate">{item.name}</span>
-                        <span className="text-muted-foreground shrink-0 tabular-nums">
-                          {formatMoney(item.lineTotal)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+            <div className="drilldown-rows divide-border/60 flex flex-col divide-y">
+              {drilldown.groups.map((group, index) => (
+                <div
+                  className="pb-1 first:pt-1"
+                  key={group.receipt.id}
+                  style={{ "--i": index } as CSSProperties}
+                >
+                  <Group group={group} />
                 </div>
               ))}
             </div>

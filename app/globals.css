@@ -275,6 +275,31 @@
   transition-duration: 280ms;
 }
 
+/* The drill-down's rows land in sequence when a chart datum is opened — the
+   same ripple the phone's receipt list uses, tightened for a panel that opens
+   under the cursor: 30ms apart, 6px of travel, capped at the sixth row, so a
+   long list never queues behind its own tail. Rows are interactive from the
+   first frame; the entrance is opacity and position only. */
+.drilldown-rows > * {
+  transition:
+    opacity 180ms var(--ease-out),
+    translate 180ms var(--ease-out);
+  transition-delay: calc(min(var(--i, 0), 5) * 30ms);
+
+  @starting-style {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+/* The list is capped, so it needs a scrollbar — but a default one is a slab of
+   chrome inside a small panel. Thin, and drawn in the border colour so it reads
+   as part of the surface. */
+.drilldown-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
 /* The OCR transcript is a native `<details>` in a server component, so the
    opening is bridged in CSS rather than by adding a client accordion. The
    `@supports` gate is the fallback: browsers without keyword interpolation
@@ -321,6 +346,15 @@
   /* The stagger is the movement here, so it goes too: the list fades in as one
      block rather than rippling. */
   .receipt-cards > * {
+    transition: opacity 150ms ease;
+    transition-delay: 0ms;
+
+    @starting-style {
+      translate: none;
+    }
+  }
+
+  .drilldown-rows > * {
     transition: opacity 150ms ease;
     transition-delay: 0ms;
 
