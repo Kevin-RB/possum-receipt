@@ -4,7 +4,7 @@ import { MerchantSpendingChart } from "@/components/overview/merchant-spending-c
 import { SpendingChart } from "@/components/overview/spending-chart";
 import { requireSession } from "@/lib/auth/dal";
 import { listOverviewReceipts } from "@/lib/db";
-import { overviewWindow } from "@/lib/overview";
+import { overviewScope, rangeLabel } from "@/lib/overview";
 import { viewerToday } from "@/lib/viewer";
 
 const OverviewPage = async () => {
@@ -20,10 +20,8 @@ const OverviewPage = async () => {
   // One bounded query, carrying the line items with the receipts: the charts
   // aggregate it in the browser and each drill-down filters the same array, so
   // a panel's total is the bar's total by construction.
-  const receipts = await listOverviewReceipts(
-    session.user.id,
-    overviewWindow(today)
-  );
+  const scope = overviewScope(today);
+  const receipts = await listOverviewReceipts(session.user.id, scope.window);
 
   return (
     <main className="container mx-auto flex flex-col gap-6 p-6">
@@ -32,7 +30,7 @@ const OverviewPage = async () => {
       <CategorySpendingChart receipts={receipts} today={todayISO} />
       <div className="grid gap-6 lg:grid-cols-2">
         <MerchantSpendingChart receipts={receipts} today={todayISO} />
-        <IntegrityChart receipts={receipts} />
+        <IntegrityChart period={rangeLabel(scope.range)} receipts={receipts} />
       </div>
     </main>
   );

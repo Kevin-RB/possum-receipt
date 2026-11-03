@@ -326,12 +326,19 @@
   overflow: hidden;
 }
 
-.drilldown-disclosure [data-slot="collapsible-content"][data-open] {
-  animation: drilldown-open 200ms var(--ease-out);
-}
+/* Gated, not overridden. The attribute selectors below are (0,3,0), so a
+   reduced-motion rule outside the media query could never outrank them however
+   late it appears — specificity is compared before source order. Leaving the
+   animation undeclared under `reduce` also means Base UI reads no animation and
+   opens the panel instantly instead of waiting 200ms for one. */
+@media (prefers-reduced-motion: no-preference) {
+  .drilldown-disclosure [data-slot="collapsible-content"][data-open] {
+    animation: drilldown-open 200ms var(--ease-out);
+  }
 
-.drilldown-disclosure [data-slot="collapsible-content"][data-closed] {
-  animation: drilldown-close 200ms var(--ease-out);
+  .drilldown-disclosure [data-slot="collapsible-content"][data-closed] {
+    animation: drilldown-close 200ms var(--ease-out);
+  }
 }
 
 @keyframes drilldown-open {
@@ -419,12 +426,6 @@
   .drilldown-rows > * {
     transition-duration: 150ms;
     transition-delay: 0ms;
-  }
-
-  /* A box that grows over 200ms is the movement; there is no fade worth
-     keeping, so the disclosure opens instantly. */
-  .drilldown-disclosure [data-slot="collapsible-content"] {
-    animation: none;
   }
 
   .transcript-details::details-content {

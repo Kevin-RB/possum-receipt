@@ -69,8 +69,12 @@ const CenterLabel = ({ warnings, viewBox }: CenterLabelProps) => {
 };
 
 export const IntegrityChart = ({
+  period,
   receipts,
 }: {
+  /** The span the corpus covers, spelled out because the gauge has no period
+   * selector — otherwise "N of M" reads as the whole account. */
+  period: string;
   receipts: OverviewReceipt[];
 }) => {
   const [open, setOpen] = useState(false);
@@ -95,7 +99,9 @@ export const IntegrityChart = ({
     <Card className="flex flex-col">
       <CardHeader className="items-center">
         <CardTitle>Integrity</CardTitle>
-        <CardDescription>Matching vs. flagged receipts</CardDescription>
+        <CardDescription>
+          Matching vs. flagged receipts in the last {period}
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex-1">
         <ChartContainer

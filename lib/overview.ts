@@ -117,20 +117,31 @@ export const rangeWindow = (
   };
 };
 
+export interface OverviewScope {
+  /** The range that produced the window. */
+  range: RangeKey;
+  /** The widest window any chart can ask for — the page's one query bound. */
+  window: Window;
+}
+
 /**
- * The widest window any chart can ask for — the page's one query bound.
+ * What the page loads, and what to call it.
  *
  * Derived from the ranges rather than written down again, so adding a longer
- * range cannot leave the query loading less than a chart needs.
+ * range cannot leave the query loading less than a chart needs — and so a card
+ * with no period selector (the integrity gauge) can say what it covers without
+ * spelling out a second, independent bound.
  */
-export const overviewWindow = (today: Temporal.PlainDate): Window => {
-  const [first] = RANGE_ORDER;
-  let widest = rangeWindow(first, today);
+export const overviewScope = (today: Temporal.PlainDate): OverviewScope => {
+  let widest: OverviewScope = {
+    range: RANGE_ORDER[0],
+    window: rangeWindow(RANGE_ORDER[0], today),
+  };
 
   for (const range of RANGE_ORDER) {
     const window = rangeWindow(range, today);
-    if (Temporal.PlainDate.compare(window.start, widest.start) < 0) {
-      widest = window;
+    if (Temporal.PlainDate.compare(window.start, widest.window.start) < 0) {
+      widest = { range, window };
     }
   }
 
