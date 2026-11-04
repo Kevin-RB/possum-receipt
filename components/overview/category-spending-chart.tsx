@@ -15,7 +15,6 @@ import type { BarShapeProps } from "recharts";
 import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
 import { DrilldownPanel } from "@/components/overview/drilldown-panel";
 import { useChartDrilldown } from "@/components/overview/use-chart-drilldown";
-import { useChartTap } from "@/components/overview/use-chart-tap";
 import {
   Card,
   CardContent,
@@ -59,9 +58,6 @@ export const CategorySpendingChart = ({
     () => categorySpending(receipts, period),
     [receipts, period]
   );
-
-  // Same target rule as the spending chart: a tap anywhere on the row opens it.
-  const tap = useChartTap(data, toggle);
 
   // `shape` rather than per-datum `Cell`s: recharts deprecated `Cell` in 3.x.
   const renderBar = (props: BarShapeProps) => {
@@ -108,7 +104,6 @@ export const CategorySpendingChart = ({
               config={chartConfig}
             >
               <BarChart
-                {...tap}
                 accessibilityLayer
                 data={data}
                 layout="vertical"
@@ -155,6 +150,12 @@ export const CategorySpendingChart = ({
                   fill="var(--color-total)"
                   shape={renderBar}
                   radius={4}
+                  onClick={(entry) => {
+                    const datum = data[entry.originalDataIndex];
+                    if (datum) {
+                      toggle(datum.bucket);
+                    }
+                  }}
                 />
               </BarChart>
             </ChartContainer>

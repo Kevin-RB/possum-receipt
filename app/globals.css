@@ -297,12 +297,25 @@
   }
 }
 
-/* The plot is a scrub surface: a horizontal drag belongs to the chart, which
-   moves the tooltip from band to band so a finger can pick a datum the bars are
-   far too thin to be hit directly. A vertical drag still scrolls the page, and
-   pinch-zoom stays available — `pan-y` alone would take it away. */
-[data-slot="chart"] {
-  touch-action: pan-y pinch-zoom;
+/* A phone cannot tap a 5px bar, and it should not have to look at one: below
+   `sm` the spending chart is as wide as its days need — `--chart-min-width`
+   comes from the bar count — and the strip scrolls sideways instead. The
+   scroller is the only thing that pans horizontally, so the page still scrolls
+   vertically over the chart and pinch-zoom is untouched. */
+.overview-chart-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.overview-chart-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+@media (width < 40rem) {
+  .overview-chart-inner {
+    min-width: var(--chart-min-width);
+  }
 }
 
 /* A chart datum that is not the open one steps back, so the panel beneath the

@@ -1,6 +1,6 @@
 import "temporal-polyfill/global";
 import { bucketKey } from "@/lib/overview";
-import type { Bucket, ChartDatum } from "@/lib/overview";
+import type { Bucket } from "@/lib/overview";
 
 /** Money as the overview renders it — one formatter, so every surface agrees. */
 export const currencyFormatter = new Intl.NumberFormat("en-AU", {
@@ -83,47 +83,3 @@ export const datumOpacity = (bucket: Bucket, selected: Bucket | null): number =>
   selected === null || bucketKey(selected) === bucketKey(bucket)
     ? 1
     : DIM_OPACITY;
-
-/** How far a finger must travel sideways before it is aiming, not tapping. */
-const SCRUB_SLOP = 10;
-
-/**
- * Whether a touch that started and ended at these points was a deliberate scrub
- * across the chart, rather than a tap or the page scrolling.
- *
- * Only a horizontal drag counts: a tap is left to the click handler (which
- * resolves the datum from the click coordinates), and a vertical drag belongs to
- * the page. Selecting on every `touchend` would open whatever datum the last
- * drag left behind when the reader flicks the overview.
- */
-export const isScrubGesture = (start: Point, end: Point): boolean => {
-  const dx = Math.abs(end.x - start.x);
-  const dy = Math.abs(end.y - start.y);
-
-  return dx >= SCRUB_SLOP && dx > dy;
-};
-
-export interface Point {
-  x: number;
-  y: number;
-}
-
-/**
- * The datum a chart's active index points at, or nothing when there is none.
- *
- * Recharts starts its tooltip index at `null` and leaves it alone when a click
- * lands outside the plot, so `Number(index)` cannot be trusted on its own:
- * `Number(null)` is `0`, which would open the first day for a click in the
- * margin.
- */
-export const datumAtIndex = (
-  data: ChartDatum[],
-  index?: number | string | null
-): ChartDatum | undefined => {
-  if (index === null || index === undefined) {
-    return;
-  }
-
-  const parsed = Number(index);
-  return Number.isInteger(parsed) ? data[parsed] : undefined;
-};
