@@ -145,7 +145,12 @@ export const SpendingChart = ({
                 />
               }
             />
-            <Bar dataKey="total" fill="var(--color-total)" shape={renderBar} />
+            <Bar
+              className="cursor-pointer"
+              dataKey="total"
+              fill="var(--color-total)"
+              shape={renderBar}
+            />
           </BarChart>
         </ChartContainer>
         {drilldown ? <DrilldownPanel drilldown={drilldown} /> : null}

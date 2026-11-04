@@ -5,7 +5,7 @@ import type { TouchEvent as ReactTouchEvent } from "react";
 import type { MouseHandlerDataParam } from "recharts";
 
 import type { Bucket, ChartDatum } from "@/lib/overview";
-import { isScrubGesture } from "@/lib/overview-chart";
+import { datumAtIndex, isScrubGesture } from "@/lib/overview-chart";
 
 type TouchLike = Pick<
   ReactTouchEvent<SVGGraphicsElement>,
@@ -37,8 +37,7 @@ export const useChartTap = (
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
   const toggleIndex = (index: MouseHandlerDataParam["activeTooltipIndex"]) => {
-    const parsed = Number(index);
-    const datum = Number.isInteger(parsed) ? data[parsed] : undefined;
+    const datum = datumAtIndex(data, index);
     if (datum) {
       toggle(datum.bucket);
     }

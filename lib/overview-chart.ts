@@ -1,6 +1,6 @@
 import "temporal-polyfill/global";
 import { bucketKey } from "@/lib/overview";
-import type { Bucket } from "@/lib/overview";
+import type { Bucket, ChartDatum } from "@/lib/overview";
 
 /** Money as the overview renders it — one formatter, so every surface agrees. */
 export const currencyFormatter = new Intl.NumberFormat("en-AU", {
@@ -107,3 +107,23 @@ export interface Point {
   x: number;
   y: number;
 }
+
+/**
+ * The datum a chart's active index points at, or nothing when there is none.
+ *
+ * Recharts starts its tooltip index at `null` and leaves it alone when a click
+ * lands outside the plot, so `Number(index)` cannot be trusted on its own:
+ * `Number(null)` is `0`, which would open the first day for a click in the
+ * margin.
+ */
+export const datumAtIndex = (
+  data: ChartDatum[],
+  index?: number | string | null
+): ChartDatum | undefined => {
+  if (index === null || index === undefined) {
+    return;
+  }
+
+  const parsed = Number(index);
+  return Number.isInteger(parsed) ? data[parsed] : undefined;
+};

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DIM_OPACITY,
+  datumAtIndex,
   datumOpacity,
   isScrubGesture,
 } from "@/lib/overview-chart";
@@ -61,5 +62,34 @@ describe(isScrubGesture, () => {
 
   it("does not treat a scroll that drifts sideways as a scrub", () => {
     expect(isScrubGesture({ x: 100, y: 100 }, { x: 120, y: 200 })).toBeFalsy();
+  });
+});
+
+describe(datumAtIndex, () => {
+  const data = [
+    {
+      bucket: { date: "2026-11-01", kind: "day" },
+      label: "2026-11-01",
+      total: 1,
+    },
+    {
+      bucket: { date: "2026-11-02", kind: "day" },
+      label: "2026-11-02",
+      total: 2,
+    },
+  ] as const;
+
+  it("resolves the datum the index points at", () => {
+    expect(datumAtIndex([...data], 1)?.label).toBe("2026-11-02");
+    expect(datumAtIndex([...data], "1")?.label).toBe("2026-11-02");
+  });
+
+  it("returns nothing when no datum is active", () => {
+    // `Number(null)` is 0, which would otherwise open the first day for a
+    // click in the plot margin.
+    expect(datumAtIndex([...data], null)).toBeUndefined();
+    expect(datumAtIndex([...data])).toBeUndefined();
+    expect(datumAtIndex([...data], 2)).toBeUndefined();
+    expect(datumAtIndex([...data], "1.5")).toBeUndefined();
   });
 });
