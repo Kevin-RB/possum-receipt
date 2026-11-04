@@ -312,6 +312,59 @@
   display: none;
 }
 
+/* The fade on whichever edge still has content. `use-scroll-cue.ts` names the
+   edge from the scroll position, so it appears behind the reader and vanishes
+   when they reach the end — which is the cue doing its job and then getting out
+   of the way. A mask, not an overlay, so nothing is painted over the bars. */
+.overview-chart-scroll[data-more="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 76%, transparent);
+  mask-image: linear-gradient(to right, #000 76%, transparent);
+}
+
+.overview-chart-scroll[data-more="start"] {
+  -webkit-mask-image: linear-gradient(to left, #000 76%, transparent);
+  mask-image: linear-gradient(to left, #000 76%, transparent);
+}
+
+.overview-chart-scroll[data-more="both"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 12%,
+    #000 76%,
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 12%,
+    #000 76%,
+    transparent
+  );
+}
+
+/* How much of the strip is on screen, and where. A phone has no scrollbar to
+   answer that, and a three-month strip is around ten screens wide — the fade
+   says "more", this says "how much more". */
+.overview-chart-rail {
+  position: relative;
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+/* In the chart's own colour, so the rail reads as part of the chart rather than
+   as one more hairline rule under it. */
+.overview-chart-thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--chart-1);
+}
+
 @media (width < 40rem) {
   .overview-chart-inner {
     min-width: var(--chart-min-width);

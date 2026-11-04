@@ -16,6 +16,7 @@ import type { BarShapeProps } from "recharts";
 import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
 import { DrilldownPanel } from "@/components/overview/drilldown-panel";
 import { useChartDrilldown } from "@/components/overview/use-chart-drilldown";
+import { useScrollCue } from "@/components/overview/use-scroll-cue";
 import {
   Card,
   CardContent,
@@ -92,6 +93,9 @@ export const SpendingChart = ({
         ? 0
         : (lastActive + 1) * BAR_SLOT - strip.clientWidth / 2;
   }, [data]);
+
+  const railRef = useRef<HTMLDivElement>(null);
+  useScrollCue(scrollRef, railRef);
 
   const chartMinWidth = monthly ? undefined : data.length * BAR_SLOT;
 
@@ -204,6 +208,13 @@ export const SpendingChart = ({
               </BarChart>
             </ChartContainer>
           </div>
+        </div>
+        <div
+          aria-hidden
+          className="overview-chart-rail sm:hidden"
+          ref={railRef}
+        >
+          <div className="overview-chart-thumb" />
         </div>
         {drilldown ? <DrilldownPanel drilldown={drilldown} /> : null}
       </CardContent>
