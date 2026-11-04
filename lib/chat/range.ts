@@ -16,6 +16,7 @@ export const CHAT_RANGES = [
   "this_month",
   "last_month",
   "this_year",
+  "last_year",
   "all_time",
 ] as const;
 
@@ -92,6 +93,10 @@ export const resolveRange = (
     }
     case "this_year": {
       return inclusive(today.with({ day: 1, month: 1 }), today);
+    }
+    case "last_year": {
+      const first = today.with({ day: 1, month: 1, year: today.year - 1 });
+      return inclusive(first, first.with({ day: 31, month: 12 }));
     }
     case "all_time": {
       return {};

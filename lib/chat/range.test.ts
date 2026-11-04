@@ -55,6 +55,30 @@ describe(resolveRange, () => {
     });
   });
 
+  it("covers the whole previous calendar year, not the current one", () => {
+    // "last year" must not fall back to this_year: a query for 2025 that
+    // silently answers for 2026 is worse than no answer.
+    expect(resolveRange("last_year", WEDNESDAY)).toStrictEqual({
+      from: "2025-01-01",
+      to: "2025-12-31",
+    });
+  });
+
+  it("handles the year boundary from both sides", () => {
+    expect(
+      resolveRange("last_year", Temporal.PlainDate.from("2026-01-01"))
+    ).toStrictEqual({ from: "2025-01-01", to: "2025-12-31" });
+    expect(
+      resolveRange("last_year", Temporal.PlainDate.from("2026-12-31"))
+    ).toStrictEqual({ from: "2025-01-01", to: "2025-12-31" });
+  });
+
+  it("covers a leap previous year in full", () => {
+    expect(
+      resolveRange("last_year", Temporal.PlainDate.from("2025-03-01"))
+    ).toStrictEqual({ from: "2024-01-01", to: "2024-12-31" });
+  });
+
   it("leaves all_time open at both ends", () => {
     expect(resolveRange("all_time", WEDNESDAY)).toStrictEqual({});
   });

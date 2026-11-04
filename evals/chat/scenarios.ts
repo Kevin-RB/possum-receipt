@@ -383,6 +383,17 @@ export const scenarios: Scenario[] = [
     prompt: "Did I buy peanuts in the last two weeks?",
   },
   {
+    // "last year" is the range a model reaches for "this year" when the enum
+    // does not offer it, and the answer is then confidently about the wrong
+    // calendar year.
+    checks: [
+      expectTools([{ input: { range: "last_year" }, name: "list_receipts" }]),
+      expectMaxSteps(2),
+    ],
+    name: "receipts from last year",
+    prompt: "Show me my Woolworths receipts from last year",
+  },
+  {
     checks: [
       expectTools([
         {
