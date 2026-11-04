@@ -64,6 +64,7 @@ export const CategorySpendingChart = ({
     const datum = props.payload as ChartDatum | undefined;
     return (
       <Rectangle
+        className={props.className}
         fill={props.fill}
         fillOpacity={datum ? datumOpacity(datum.bucket, selected) : 1}
         height={props.height}
@@ -148,16 +149,13 @@ export const CategorySpendingChart = ({
                   dataKey="total"
                   fill="var(--color-total)"
                   shape={renderBar}
+                  radius={4}
                   onClick={(entry) => {
-                    // Not the handler's `index`: recharts filters zero-length
-                    // bars out of the rendered slice, so that index counts the
-                    // bars drawn, not the categories in `data`.
                     const datum = data[entry.originalDataIndex];
                     if (datum) {
                       toggle(datum.bucket);
                     }
                   }}
-                  radius={4}
                 />
               </BarChart>
             </ChartContainer>

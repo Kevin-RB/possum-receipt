@@ -1,7 +1,8 @@
 "use client";
 
 import "temporal-polyfill/global";
-import { useMemo } from "react";
+import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Bar,
   BarChart,
@@ -15,6 +16,7 @@ import type { BarShapeProps } from "recharts";
 import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
 import { DrilldownPanel } from "@/components/overview/drilldown-panel";
 import { useChartDrilldown } from "@/components/overview/use-chart-drilldown";
+import { useScrollCue } from "@/components/overview/use-scroll-cue";
 import {
   Card,
   CardContent,
@@ -38,6 +40,16 @@ import {
   formatMonthTick,
   formatMonthTooltipLabel,
 } from "@/lib/overview-chart";
+
+/**
+ * How much width one day gets once the chart is scrollable.
+ *
+ * Below `sm` the chart is as wide as its days need rather than squeezed into
+ * the card: 32px a day (a ~24px bar) leaves about nine on screen at 375px and
+ * turns a 5px bar into a target. Monthly bars are already wide enough to leave
+ * alone.
+ */
+const BAR_SLOT = 32;
 
 const chartConfig = {
   total: {
@@ -64,6 +76,29 @@ export const SpendingChart = ({
 
   const monthly = rangeGrain(range) === "month";
 
+  // A strip that opens on the oldest day hides today; one that opens on today
+  // can land on a run of empty days. So it opens around the most recent day
+  // that actually has spending — the thing the reader came to look at — and the
+  // browser clamps the scroll at either end.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = scrollRef.current;
+    if (!strip) {
+      return;
+    }
+
+    const lastActive = data.findLastIndex((datum) => datum.total > 0);
+    strip.scrollLeft =
+      lastActive === -1
+        ? 0
+        : (lastActive + 1) * BAR_SLOT - strip.clientWidth / 2;
+  }, [data]);
+
+  const railRef = useRef<HTMLDivElement>(null);
+  useScrollCue(scrollRef, railRef);
+
+  const chartMinWidth = monthly ? undefined : data.length * BAR_SLOT;
+
   // Drawn through `shape` rather than per-datum `Cell`s: recharts deprecated
   // `Cell` in 3.x and points at this instead. The missing bar is the point —
   // once the pointer leaves, nothing else says which day the panel belongs to.
@@ -71,6 +106,7 @@ export const SpendingChart = ({
     const datum = props.payload as ChartDatum | undefined;
     return (
       <Rectangle
+        className={props.className}
         fill={props.fill}
         fillOpacity={datum ? datumOpacity(datum.bucket, selected) : 1}
         height={props.height}
@@ -99,62 +135,87 @@ export const SpendingChart = ({
         />
       </CardHeader>
       <CardContent>
-        <ChartContainer
-          className="aspect-auto h-100 w-full sm:h-75"
-          config={chartConfig}
-        >
-          <BarChart
-            accessibilityLayer
-            data={data}
-            margin={{
-              left: 12,
-              right: 12,
-            }}
+        <div className="overview-chart-scroll" ref={scrollRef}>
+          <div
+            className="overview-chart-inner"
+            style={
+              chartMinWidth
+                ? ({
+                    "--chart-min-width": `${chartMinWidth}px`,
+                  } as CSSProperties)
+                : undefined
+            }
           >
-            <CartesianGrid vertical={false} />
-            <XAxis
-              axisLine={false}
-              dataKey="label"
-              minTickGap={32}
-              tick={{ fontSize: 11 }}
-              tickFormatter={monthly ? formatMonthTick : formatDayTick}
-              tickLine={false}
-              tickMargin={8}
-            />
-            <YAxis
-              axisLine={false}
-              tick={{ fontSize: 11 }}
-              tickFormatter={(value) => currencyFormatter.format(Number(value))}
-              tickLine={false}
-              tickMargin={8}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value) => currencyFormatter.format(Number(value))}
-                  labelFormatter={
-                    monthly ? formatMonthTooltipLabel : formatDayTooltipLabel
+            <ChartContainer
+              className="aspect-auto h-100 w-full sm:h-75"
+              config={chartConfig}
+            >
+              <BarChart
+                accessibilityLayer
+                data={data}
+                margin={{
+                  left: 12,
+                  right: 12,
+                }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  axisLine={false}
+                  dataKey="label"
+                  minTickGap={32}
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={monthly ? formatMonthTick : formatDayTick}
+                  tickLine={false}
+                  tickMargin={8}
+                />
+                <YAxis
+                  axisLine={false}
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(value) =>
+                    currencyFormatter.format(Number(value))
+                  }
+                  tickLine={false}
+                  tickMargin={8}
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      formatter={(value) =>
+                        currencyFormatter.format(Number(value))
+                      }
+                      labelFormatter={
+                        monthly
+                          ? formatMonthTooltipLabel
+                          : formatDayTooltipLabel
+                      }
+                    />
                   }
                 />
-              }
-            />
-            <Bar
-              className="cursor-pointer"
-              dataKey="total"
-              fill="var(--color-total)"
-              shape={renderBar}
-              onClick={(entry) => {
-                // Not the handler's `index`: recharts filters zero-length
-                // bars out of the rendered slice, so that index counts the
-                // bars drawn, not the days in `data`.
-                const datum = data[entry.originalDataIndex];
-                if (datum) {
-                  toggle(datum.bucket);
-                }
-              }}
-            />
-          </BarChart>
-        </ChartContainer>
+                <Bar
+                  className="cursor-pointer"
+                  dataKey="total"
+                  fill="var(--color-total)"
+                  shape={renderBar}
+                  onClick={(entry) => {
+                    // The index recharts hands back counts the bars it drew,
+                    // not the days in `data`; `originalDataIndex` is its own.
+                    const datum = data[entry.originalDataIndex];
+                    if (datum) {
+                      toggle(datum.bucket);
+                    }
+                  }}
+                />
+              </BarChart>
+            </ChartContainer>
+          </div>
+        </div>
+        <div
+          aria-hidden
+          className="overview-chart-rail sm:hidden"
+          ref={railRef}
+        >
+          <div className="overview-chart-thumb" />
+        </div>
         {drilldown ? <DrilldownPanel drilldown={drilldown} /> : null}
       </CardContent>
     </Card>

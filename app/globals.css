@@ -297,6 +297,91 @@
   }
 }
 
+/* A phone cannot tap a 5px bar, and it should not have to look at one: below
+   `sm` the spending chart is as wide as its days need — `--chart-min-width`
+   comes from the bar count — and the strip scrolls sideways instead. The
+   scroller is the only thing that pans horizontally, so the page still scrolls
+   vertically over the chart and pinch-zoom is untouched. */
+.overview-chart-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.overview-chart-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* The fade on whichever edge still has content. `use-scroll-cue.ts` names the
+   edge from the scroll position, so it appears behind the reader and vanishes
+   when they reach the end — which is the cue doing its job and then getting out
+   of the way. A mask, not an overlay, so nothing is painted over the bars. */
+.overview-chart-scroll[data-more="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 76%, transparent);
+  mask-image: linear-gradient(to right, #000 76%, transparent);
+}
+
+.overview-chart-scroll[data-more="start"] {
+  -webkit-mask-image: linear-gradient(to left, #000 76%, transparent);
+  mask-image: linear-gradient(to left, #000 76%, transparent);
+}
+
+.overview-chart-scroll[data-more="both"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 12%,
+    #000 76%,
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 12%,
+    #000 76%,
+    transparent
+  );
+}
+
+/* How much of the strip is on screen, and where. A phone has no scrollbar to
+   answer that, and a three-month strip is around ten screens wide — the fade
+   says "more", this says "how much more". */
+.overview-chart-rail {
+  position: relative;
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+/* In the chart's own colour, so the rail reads as part of the chart rather than
+   as one more hairline rule under it. */
+.overview-chart-thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--chart-1);
+}
+
+@media (width < 40rem) {
+  .overview-chart-inner {
+    min-width: var(--chart-min-width);
+  }
+}
+
+/* Recharts clamps the tooltip to the chart's viewBox — the full scrolled width,
+   not the visible strip — so below `sm` it lands past the right edge for most of
+   each screenful and the scroller clips it. Tapping a bar is the phone's
+   affordance, and the drill-down carries the numbers, so the tooltip steps
+   aside at the width where the chart scrolls. */
+@media (width < 40rem) {
+  .overview-chart-scroll .recharts-tooltip-wrapper {
+    display: none;
+  }
+}
+
 /* A chart datum that is not the open one steps back, so the panel beneath the
    chart still has a provenance once the pointer has left the mark that opened
    it. Paint-only — `fill-opacity` reflows nothing — so this needs no
