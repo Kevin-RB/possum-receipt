@@ -71,6 +71,8 @@ export type ReceiptWithItems = ReceiptSelect & {
 interface ReceiptEditFormProps {
   categoryGroups: CategoryOptionGroup[];
   receipt: ReceiptWithItems;
+  /** The viewer's day, resolved on the server — the date field's ceiling. */
+  today: string;
 }
 
 type FormValues = z.input<typeof updateReceiptSchema>;
@@ -362,6 +364,7 @@ const ReceiptItemRow = ({
 export const ReceiptEditForm = ({
   categoryGroups,
   receipt,
+  today,
 }: ReceiptEditFormProps) => {
   const {
     control,
@@ -529,6 +532,7 @@ export const ReceiptEditForm = ({
                     render={({ field: datetimeField }) => (
                       <TransactionDateTimeField
                         onValueChange={(value) => datetimeField.onChange(value)}
+                        today={today}
                         value={datetimeField.value}
                       />
                     )}

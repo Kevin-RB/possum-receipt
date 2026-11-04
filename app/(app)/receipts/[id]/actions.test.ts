@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+import { USER_ERROR } from "@/lib/errors";
+
 import type { UpdateReceiptInput } from "./schema";
 
 const {
@@ -11,7 +13,7 @@ const {
   mockInsertValues,
   mockListCategoryOptions,
   mockRevalidatePath,
-  mockReceiptDateTimeToDate,
+  mockReceiptDateTimeToWallClock,
   mockSet,
   mockSetWhere,
   mockTransaction,
@@ -88,9 +90,9 @@ const {
     ]);
 
   const revalidatePath = vi.fn<(path: string) => undefined>();
-  const receiptDateTimeToDate = vi
-    .fn<(datetime: string) => Date>()
-    .mockReturnValue(new Date("2026-01-01T00:00:00.000Z"));
+  const receiptDateTimeToWallClock = vi
+    .fn<(datetime: string) => string>()
+    .mockReturnValue("2026-01-01 10:00:00");
   const getSession = vi
     .fn<() => Promise<{ user: { id: string } } | null>>()
     .mockResolvedValue({ user: { id: "user-1" } });
@@ -103,7 +105,7 @@ const {
     mockInsert: insertTable,
     mockInsertValues: insertValues,
     mockListCategoryOptions: listCategoryOptions,
-    mockReceiptDateTimeToDate: receiptDateTimeToDate,
+    mockReceiptDateTimeToWallClock: receiptDateTimeToWallClock,
     mockRevalidatePath: revalidatePath,
     mockSet: setValue,
     mockSetWhere: setWhere,
@@ -137,9 +139,8 @@ vi.mock(import("next/cache"), () => ({
 }));
 
 vi.mock(import("@/lib/receipt/datetime"), () => ({
-  RECEIPT_TIMEZONE: "Australia/Brisbane" as const,
-  receiptDateTimeToDate: mockReceiptDateTimeToDate,
-  receiptDateToLocalString: vi.fn<(date: Date) => string>(),
+  receiptDateTimeToWallClock: mockReceiptDateTimeToWallClock,
+  wallClockToLocalString: vi.fn<(value: string) => string>(),
 }));
 
 const { updateReceipt } = await import("./actions");
@@ -862,7 +863,7 @@ describe(updateReceipt, () => {
 
     expect(mockSet).toHaveBeenCalledWith(
       expect.objectContaining({
-        transactionDateTime: new Date("2026-01-01T00:00:00.000Z"),
+        transactionDateTime: "2026-01-01 10:00:00",
       })
     );
   });
@@ -965,7 +966,7 @@ describe(updateReceipt, () => {
     const result = await updateReceipt(validInput);
 
     expect(result).toStrictEqual({
-      error: "Receipt is not editable",
+      error: USER_ERROR.unauthorized,
       success: false,
     });
     expect(mockFindFirst).not.toHaveBeenCalled();

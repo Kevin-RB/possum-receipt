@@ -7,6 +7,7 @@ import { listAvailableModels } from "@/lib/ai/models";
 import { ORC_MODEL, PARSE_MODEL } from "@/lib/ai/provider";
 import { getSession } from "@/lib/auth/dal";
 import { db, receipts } from "@/lib/db";
+import { reportError, USER_ERROR } from "@/lib/errors";
 import { inngest } from "@/lib/inngest/client";
 import { receiptReprocessEvent } from "@/lib/inngest/events";
 import { BUCKET, deleteObject } from "@/lib/storage/client";
@@ -17,7 +18,7 @@ export const deleteReceipt = async (receiptId: string) => {
   const session = await getSession();
 
   if (!session) {
-    return { error: "Receipt not found", success: false as const };
+    return { error: USER_ERROR.unauthorized, success: false as const };
   }
 
   const existing = await db.query.receipts.findFirst({
@@ -25,7 +26,7 @@ export const deleteReceipt = async (receiptId: string) => {
   });
 
   if (!existing) {
-    return { error: "Receipt not found", success: false as const };
+    return { error: USER_ERROR.notFound, success: false as const };
   }
 
   try {
@@ -34,8 +35,9 @@ export const deleteReceipt = async (receiptId: string) => {
     }
 
     await db.delete(receipts).where(eq(receipts.id, receiptId));
-  } catch {
-    return { error: "Failed to delete receipt", success: false as const };
+  } catch (error) {
+    reportError("receipts.delete", error);
+    return { error: USER_ERROR.deleteFailed, success: false as const };
   }
 
   revalidatePath("/");
@@ -103,13 +105,13 @@ export const reprocessReceipt = async (input: unknown) => {
   const session = await getSession();
 
   if (!session) {
-    return { error: "Receipt not found", success: false as const };
+    return { error: USER_ERROR.unauthorized, success: false as const };
   }
 
   const parsed = reprocessReceiptSchema.safeParse(input);
 
   if (!parsed.success) {
-    return { error: "Validation failed", success: false as const };
+    return { error: USER_ERROR.invalidInput, success: false as const };
   }
 
   const { models, receiptId } = parsed.data;
@@ -119,19 +121,19 @@ export const reprocessReceipt = async (input: unknown) => {
   });
 
   if (!receipt) {
-    return { error: "Receipt not found", success: false as const };
+    return { error: USER_ERROR.notFound, success: false as const };
   }
 
   if (receipt.status === "uploading") {
     return {
-      error: "Receipt is not ready to re-process",
+      error: USER_ERROR.reprocessNotReady,
       success: false as const,
     };
   }
 
   if (!receipt.objectKey) {
     return {
-      error: "Receipt has no image to re-process",
+      error: USER_ERROR.reprocessNoImage,
       success: false as const,
     };
   }
@@ -145,7 +147,7 @@ export const reprocessReceipt = async (input: unknown) => {
 
   if (reported.length === 0) {
     return {
-      error: "The model server is not reachable",
+      error: USER_ERROR.modelServerUnreachable,
       success: false as const,
     };
   }
@@ -153,7 +155,7 @@ export const reprocessReceipt = async (input: unknown) => {
   const available = new Set(reported);
 
   if (!available.has(models.ocr) || !available.has(models.parse)) {
-    return { error: "That model is not available", success: false as const };
+    return { error: USER_ERROR.modelNotAvailable, success: false as const };
   }
 
   const leaseExpiredBefore = new Date(Date.now() - PROCESSING_LEASE_MS);
@@ -190,7 +192,7 @@ export const reprocessReceipt = async (input: unknown) => {
 
   if (claimed.length === 0) {
     return {
-      error: "Receipt is already being processed",
+      error: USER_ERROR.reprocessInFlight,
       success: false as const,
     };
   }
@@ -216,7 +218,9 @@ export const reprocessReceipt = async (input: unknown) => {
         { id: crypto.randomUUID() }
       ),
     ]);
-  } catch {
+  } catch (error) {
+    reportError("receipts.reprocess", error);
+
     // Puts back both halves of the claim. The stamp matters as much as the
     // status: a takeover wrote a fresh one, and leaving it behind re-locks the
     // receipt for another full lease — after the owner had already waited one
@@ -232,7 +236,7 @@ export const reprocessReceipt = async (input: unknown) => {
         and(eq(receipts.id, receiptId), eq(receipts.status, "processing"))
       );
 
-    return { error: "Failed to start re-processing", success: false as const };
+    return { error: USER_ERROR.reprocessFailed, success: false as const };
   }
 
   revalidatePath("/receipts");

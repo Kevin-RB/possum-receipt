@@ -4,7 +4,6 @@ import {
   snakeCase,
   text,
   timestamp,
-  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const user = snakeCase.table("user", {
@@ -15,6 +14,10 @@ export const user = snakeCase.table("user", {
   image: text(),
   inviteCode: text(),
   name: text().notNull(),
+  // Where the account was created, captured at sign-up. Nullable: Better Auth
+  // writes it, but a row created before this column existed has no zone, and
+  // `resolveTimezone` treats that the same as one it cannot read.
+  timezone: text(),
   updatedAt: timestamp({ withTimezone: true })
     .notNull()
     .defaultNow()
@@ -49,7 +52,6 @@ export const account = snakeCase.table(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     id: text().primaryKey(),
     idToken: text(),
-    issuer: text().notNull(),
     password: text(),
     providerId: text().notNull(),
     refreshToken: text(),
@@ -62,13 +64,7 @@ export const account = snakeCase.table(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },
-  (table) => [
-    uniqueIndex("account_issuer_account_id_uidx").on(
-      table.issuer,
-      table.accountId
-    ),
-    index("account_user_id_index").on(table.userId),
-  ]
+  (table) => [index("account_user_id_index").on(table.userId)]
 );
 
 export const verification = snakeCase.table(

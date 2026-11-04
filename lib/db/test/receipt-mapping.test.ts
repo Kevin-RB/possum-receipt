@@ -23,7 +23,7 @@ const flatReceipt: ReceiptSelect = {
   status: "done",
   subtotal: 9.9,
   total: 10.9,
-  transactionDateTime: dtypeReceipt,
+  transactionDateTime: "2026-06-15 14:32:00",
   transcript: null,
   userId: "user-1",
 };

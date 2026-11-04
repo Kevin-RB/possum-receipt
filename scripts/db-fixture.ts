@@ -18,17 +18,14 @@ import {
   plannedPasswordOutcome,
   readFixtureState,
 } from "@/lib/db/fixture-provision";
-import {
-  RECEIPT_TIMEZONE,
-  receiptDateToISODateString,
-} from "@/lib/receipt/datetime";
+import { RECEIPT_TIMEZONE, wallClockToISODate } from "@/lib/receipt/datetime";
 
 const lineItemCount = (fixture: Fixture) =>
   fixture.receipts.reduce((sum, receipt) => sum + receipt.items.length, 0);
 
 const dateRange = (fixture: Fixture) => {
   const dates = fixture.receipts
-    .map((receipt) => receiptDateToISODateString(receipt.transactionDateTime))
+    .map((receipt) => wallClockToISODate(receipt.transactionDateTime))
     .toSorted();
   return `${dates[0]} .. ${dates.at(-1)}`;
 };

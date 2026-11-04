@@ -1,7 +1,10 @@
 import type { DateRange } from "react-day-picker";
 import "temporal-polyfill/global";
 
-import { receiptDateToISODateString } from "@/lib/receipt/datetime";
+import {
+  localDayToISODate,
+  tryWallClockToISODate,
+} from "@/lib/receipt/datetime";
 
 export type DateRangeFilterValue = Partial<DateRange>;
 
@@ -19,14 +22,17 @@ export const dateRangeFilterFn = (
     return true;
   }
   const raw = row.getValue(columnId);
-  if (!(raw instanceof Date)) {
+  // The row value is the receipt's printed wall clock; the range bounds are
+  // calendar days carried at browser-local midnight.
+  const dateString =
+    typeof raw === "string" ? tryWallClockToISODate(raw) : undefined;
+  if (!dateString) {
     return false;
   }
-  const dateString = receiptDateToISODateString(raw);
-  if (from && dateString < receiptDateToISODateString(from)) {
+  if (from && dateString < localDayToISODate(from)) {
     return false;
   }
-  if (to && dateString > receiptDateToISODateString(to)) {
+  if (to && dateString > localDayToISODate(to)) {
     return false;
   }
   return true;

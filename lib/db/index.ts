@@ -1,12 +1,10 @@
-import { and, eq, gte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import "temporal-polyfill/global";
 
 import { relations } from "@/lib/db/relations";
 import { categories as categoriesTable } from "@/lib/db/schema/category";
-import { receipts as receiptsTable } from "@/lib/db/schema/receipt";
-import { receiptItems as receiptItemsTable } from "@/lib/db/schema/receipt-item";
-import { RECEIPT_TIMEZONE } from "@/lib/receipt/datetime";
+import type { OverviewReceipt, Window } from "@/lib/overview";
 
 import { DEFAULT_DATABASE_URL } from "./constants";
 
@@ -59,11 +57,56 @@ export const listReceipts = (ownerId: string) =>
     where: { userId: ownerId },
   });
 
-export const listDoneReceipts = (ownerId: string) =>
-  db.query.receipts.findMany({
-    orderBy: (table, { desc: orderDesc }) => [orderDesc(table.createdAt)],
-    where: { status: "done", userId: ownerId },
+/**
+ * The overview's corpus: every done receipt in the window, with its line items
+ * and their categories, in one bounded query.
+ *
+ * One query rather than a per-chart aggregate, because the charts and their
+ * drill-downs must agree on what a bar was summed from. The page passes the
+ * widest window any chart can show, on both ends — a receipt dated in the
+ * future is no more part of "the last twelve months" than an old one — so
+ * loading the overview never ships the whole receipt history.
+ */
+export const listOverviewReceipts = async (
+  ownerId: string,
+  window: Window
+): Promise<OverviewReceipt[]> => {
+  const receipts = await db.query.receipts.findMany({
+    columns: {
+      hasIntegrityWarning: true,
+      id: true,
+      merchantName: true,
+      total: true,
+      transactionDateTime: true,
+    },
+    orderBy: (table, { desc: orderDesc }) => [
+      orderDesc(table.transactionDateTime),
+    ],
+    where: {
+      status: "done",
+      transactionDateTime: {
+        gte: `${window.start.toString()} 00:00:00`,
+        lte: `${window.end.toString()} 23:59:59`,
+      },
+      userId: ownerId,
+    },
+    with: {
+      receiptItems: {
+        columns: { id: true, kind: true, lineTotal: true, name: true },
+        with: { category: { columns: { name: true, slug: true } } },
+      },
+    },
   });
+
+  return receipts.map(({ receiptItems, ...receipt }) => ({
+    ...receipt,
+    items: receiptItems.map(({ category, ...item }) => ({
+      ...item,
+      categoryName: category?.name ?? null,
+      categorySlug: category?.slug ?? null,
+    })),
+  }));
+};
 
 export interface CategoryOption {
   id: string;
@@ -91,50 +134,6 @@ export const listCategoryOptions = async (): Promise<CategoryOption[]> => {
         : null,
       slug: category.slug,
     }));
-};
-
-export interface CategorySpendDay {
-  categoryName: string;
-  date: string;
-  slug: string;
-  total: number;
-}
-
-const categoryDayExpression = sql`(${receiptsTable.transactionDateTime} at time zone ${sql.raw(`'${RECEIPT_TIMEZONE}'`)})::date`;
-
-export const spendByCategoryByDay = async (
-  ownerId: string,
-  days: number
-): Promise<CategorySpendDay[]> => {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-  return await db
-    .select({
-      categoryName: sql<string>`coalesce(${categoriesTable.name}, 'Uncategorised')`,
-      date: sql<string>`${categoryDayExpression}`,
-      slug: sql<string>`coalesce(${categoriesTable.slug}, 'uncategorised')`,
-      total: sql<number>`sum(${receiptItemsTable.lineTotal})::double precision`,
-    })
-    .from(receiptItemsTable)
-    .innerJoin(receiptsTable, eq(receiptItemsTable.receiptId, receiptsTable.id))
-    .leftJoin(
-      categoriesTable,
-      eq(receiptItemsTable.categoryId, categoriesTable.id)
-    )
-    .where(
-      and(
-        eq(receiptsTable.userId, ownerId),
-        eq(receiptsTable.status, "done"),
-        eq(receiptItemsTable.kind, "product"),
-        gte(receiptsTable.transactionDateTime, since)
-      )
-    )
-    .groupBy(
-      categoriesTable.id,
-      categoriesTable.name,
-      categoriesTable.slug,
-      categoryDayExpression
-    );
 };
 
 export { drizzle } from "drizzle-orm/node-postgres";

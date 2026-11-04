@@ -3,9 +3,13 @@ import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { createChatAgent } from "@/lib/chat/agent";
+import { chatErrorCode } from "@/lib/chat/errors";
 import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
 import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
+import { reportError, USER_ERROR } from "@/lib/errors";
+import { resolveToday } from "@/lib/time";
+import { viewerZone } from "@/lib/viewer";
 
 /** The app runs against a local model, so latency is bound by OCR-free local inference. */
 export const maxDuration = 60;
@@ -14,7 +18,10 @@ export const POST = async (request: Request) => {
   const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: USER_ERROR.unauthorized },
+      { status: 401 }
+    );
   }
 
   let body: unknown;
@@ -38,12 +45,29 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid messages." }, { status: 400 });
   }
 
-  const agent = await createChatAgent(session.user.id);
+  // The same chain the pages walk, through the same function — not a second
+  // composition of it, which is how the assistant and the charts end up on
+  // different days. A chat-only candidate would be the same mistake in the
+  // other direction: the browser's zone is already on the request.
+  const timezone = await viewerZone(session.user.timezone);
+
+  const agent = await createChatAgent(
+    session.user.id,
+    resolveToday(timezone),
+    timezone
+  );
 
   return createAgentUIStreamResponse({
     abortSignal: request.signal,
     agent,
-    onError: () => "Something went wrong. Please try again.",
+    // The UI shows the returned string, so it comes from the catalogue and is
+    // written for a reader. The error itself — provider URL, model id, retry
+    // causes — is logged instead: an error part carries no cause, so this is
+    // the only place it exists.
+    onError: (error) => {
+      reportError("chat", error);
+      return USER_ERROR[chatErrorCode(error)];
+    },
     // Everything past this point came off the wire. See `lib/chat/trust.ts`.
     uiMessages: discardUntrustedToolOutputs(messages),
   });

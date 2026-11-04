@@ -9,11 +9,7 @@ import {
   receiptItems,
   receipts,
 } from "@/lib/db";
-import {
-  formatReceiptDate,
-  RECEIPT_TIMEZONE,
-  receiptDateToISODateString,
-} from "@/lib/receipt/datetime";
+import { formatReceiptDate, wallClockToISODate } from "@/lib/receipt/datetime";
 
 import type {
   CategorySpend,
@@ -28,19 +24,16 @@ const LIST_LIMIT = 20;
 
 const roundToCents = (value: number): number => Math.round(value * 100) / 100;
 
-export const startOfReceiptDay = (isoDate: string): Date =>
-  new Date(
-    Temporal.PlainDate.from(isoDate).toZonedDateTime({
-      timeZone: RECEIPT_TIMEZONE,
-    }).epochMilliseconds
-  );
+/**
+ * The bounds of an inclusive calendar day, in the column's wall-clock format.
+ * The stored value is already the receipt's local time, so a day is a string
+ * comparison — no timezone conversion and no instant arithmetic.
+ */
+export const startOfReceiptDay = (isoDate: string): string =>
+  `${isoDate} 00:00:00`;
 
-export const startOfNextReceiptDay = (isoDate: string): Date =>
-  new Date(
-    Temporal.PlainDate.from(isoDate)
-      .add({ days: 1 })
-      .toZonedDateTime({ timeZone: RECEIPT_TIMEZONE }).epochMilliseconds
-  );
+export const startOfNextReceiptDay = (isoDate: string): string =>
+  `${Temporal.PlainDate.from(isoDate).add({ days: 1 }).toString()} 00:00:00`;
 
 const escapeLike = (value: string): string =>
   value.replaceAll(/[%_\\]/gu, "\\$&");
@@ -154,7 +147,7 @@ const FUZZY_SIMILARITY_THRESHOLD = 0.4;
 
 interface SearchRow {
   category: string | null;
-  date: Date | null;
+  date: string | null;
   item: string;
   kind: string;
   lineTotal: number;
@@ -184,7 +177,7 @@ const toLineItemSearch = (items: SearchRow[]): LineItemSearch => {
     count: items.length,
     items: items.map((item) => ({
       ...item,
-      date: item.date ? receiptDateToISODateString(item.date) : null,
+      date: item.date ? wallClockToISODate(item.date) : null,
       dateLabel: item.date ? formatReceiptDate(item.date) : null,
     })),
     total: roundToCents(total),
@@ -259,7 +252,7 @@ export const listReceiptSummaries = async (
     .limit(LIST_LIMIT);
   return rows.map((row) => ({
     ...row,
-    date: row.date ? receiptDateToISODateString(row.date) : null,
+    date: row.date ? wallClockToISODate(row.date) : null,
     dateLabel: row.date ? formatReceiptDate(row.date) : null,
   }));
 };
@@ -275,7 +268,7 @@ export const receiptDetail = async (
 
   return {
     date: receipt.transactionDateTime
-      ? receiptDateToISODateString(receipt.transactionDateTime)
+      ? wallClockToISODate(receipt.transactionDateTime)
       : null,
     dateLabel: receipt.transactionDateTime
       ? formatReceiptDate(receipt.transactionDateTime)

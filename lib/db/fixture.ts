@@ -7,7 +7,10 @@ import type {
   LineItemKind,
   ReceiptItemInsert,
 } from "@/lib/db/schema/receipt-item";
-import { receiptDateTimeToDate } from "@/lib/receipt/datetime";
+import {
+  receiptDateTimeToWallClock,
+  wallClockToInstant,
+} from "@/lib/receipt/datetime";
 
 /**
  * The agent test account, and the default `--email`. An agent that reaches for
@@ -155,7 +158,7 @@ export interface FixtureReceipt extends Omit<
   status: "done";
   subtotal: number | null;
   total: number;
-  transactionDateTime: Date;
+  transactionDateTime: string;
 }
 
 export interface Fixture {
@@ -374,7 +377,7 @@ const buildReceipt = (
   const day = month.with({ day: 1 + Math.floor(random() * lastDay) });
   const hour = OPENING_HOUR + Math.floor(random() * OPENING_HOURS);
   const minute = Math.floor(random() * (60 / MINUTE_STEP)) * MINUTE_STEP;
-  const transactionDateTime = receiptDateTimeToDate(
+  const transactionDateTime = receiptDateTimeToWallClock(
     `${day.toString()}T${pad(hour)}:${pad(minute)}`
   );
 
@@ -453,9 +456,13 @@ const buildReceipt = (
   // receipt the fixture records as not printing them.
   const printsTotalsBreakdown = index % 2 === 0;
 
+  // `categorized_at` and `created_at` are instants (server events), so they
+  // are derived from the wall clock rather than reusing it.
+  const recordedAt = wallClockToInstant(transactionDateTime);
+
   return {
-    categorizedAt: transactionDateTime,
-    createdAt: transactionDateTime,
+    categorizedAt: recordedAt,
+    createdAt: recordedAt,
     gst: printsTotalsBreakdown ? toDollars(Math.round(totalCents / 11)) : null,
     hasIntegrityWarning: isWarning,
     id: fixtureUuid(email, `receipt:${index}`),

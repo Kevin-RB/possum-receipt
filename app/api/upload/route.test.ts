@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { USER_ERROR } from "@/lib/errors";
+
 const mockReturning = vi
   .fn<() => Promise<{ receiptId: string }[]>>()
   .mockResolvedValue([{ receiptId: "00000000-0000-0000-0000-000000000001" }]);
@@ -70,7 +72,7 @@ describe("POST /api/upload", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe("Unauthorized");
+    expect(body.error).toBe(USER_ERROR.unauthorized);
   });
 
   it("stamps the receipt with the session user's id", async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+import { USER_ERROR } from "@/lib/errors";
+
 const {
   mockDelete,
   mockDeleteObject,
@@ -126,7 +128,7 @@ describe(deleteReceipt, () => {
     const result = await deleteReceipt(receiptId);
 
     expect(result).toStrictEqual({
-      error: "Receipt not found",
+      error: USER_ERROR.unauthorized,
       success: false,
     });
     expect(mockFindFirst).not.toHaveBeenCalled();
@@ -231,7 +233,7 @@ describe(reprocessReceipt, () => {
     const result = await reprocessReceipt(input);
 
     expect(result).toStrictEqual({
-      error: "Receipt not found",
+      error: USER_ERROR.unauthorized,
       success: false,
     });
     expect(mockFindFirst).not.toHaveBeenCalled();

@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarIcon } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -12,24 +12,17 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  RECEIPT_TIMEZONE,
-  receiptDateTimeToDate,
+  formatReceiptDateTime,
+  plainDateToLocalDay,
   receiptDayToLocalString,
   receiptLocalStringToDay,
   receiptLocalStringToTime,
-  receiptToday,
 } from "@/lib/receipt/datetime";
-
-// Formatted in the receipt's own timezone, since the stored value is the
-// wall-clock time printed on the receipt rather than the browser's.
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-AU", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: RECEIPT_TIMEZONE,
-});
 
 interface TransactionDateTimeFieldProps {
   onValueChange: (value: string) => void;
+  /** The viewer's day, resolved on the server — the calendar's ceiling. */
+  today: string;
   value: string | undefined;
 }
 
@@ -44,6 +37,7 @@ interface TransactionDateTimeFieldProps {
  */
 export const TransactionDateTimeField = ({
   onValueChange,
+  today,
   value,
 }: TransactionDateTimeFieldProps) => {
   const [open, setOpen] = useState(false);
@@ -51,9 +45,15 @@ export const TransactionDateTimeField = ({
   const day = receiptLocalStringToDay(value);
   const time = receiptLocalStringToTime(value);
 
-  const label = value
-    ? DATE_TIME_FORMATTER.format(receiptDateTimeToDate(value))
-    : "Select a date";
+  // A receipt cannot be bought in the future, and "the future" is the viewer's
+  // own calendar — resolved on the server, since a component that read its own
+  // clock would be server-rendered in the server's zone and hydrated in theirs.
+  const latestDay = useMemo(
+    () => plainDateToLocalDay(Temporal.PlainDate.from(today)),
+    [today]
+  );
+
+  const label = value ? formatReceiptDateTime(value) : "Select a date";
 
   return (
     <div className="flex flex-col gap-2">
@@ -72,7 +72,7 @@ export const TransactionDateTimeField = ({
         <PopoverContent align="start" className="w-auto">
           <Calendar
             defaultMonth={day}
-            disabled={{ after: receiptToday() }}
+            disabled={{ after: latestDay }}
             mode="single"
             onSelect={(next) => {
               // Selecting the selected day again clears it, so an already-chosen

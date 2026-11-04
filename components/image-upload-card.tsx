@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
+import { isUserMessage, USER_ERROR } from "@/lib/errors";
 import { compressReceiptImage } from "@/lib/images/compress-receipt-image";
 import { ACCEPTED_MIME_TYPES } from "@/lib/storage/constants";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,21 @@ class UploadError extends Error {
   }
 }
 
+/**
+ * The endpoint answers a failure with `{ error }`, but only wording from the
+ * catalogue is safe to show — the body can also be a validation string from
+ * the server. Anything else becomes the upload's own line rather than a status
+ * code in a form field.
+ */
+const failureMessage = async (response: Response): Promise<string> => {
+  const body = (await response.json().catch(() => null)) as {
+    error?: unknown;
+  } | null;
+  const message = typeof body?.error === "string" ? body.error : "";
+
+  return isUserMessage(message) ? message : USER_ERROR.uploadFailed;
+};
+
 const uploadReceipt = async (
   file: File,
   onStageChange?: (stage: UploadStage) => void
@@ -53,10 +69,7 @@ const uploadReceipt = async (
   });
 
   if (!res.ok) {
-    throw new UploadError(
-      "requesting-url",
-      `Upload request failed (${res.status} ${res.statusText})`
-    );
+    throw new UploadError("requesting-url", await failureMessage(res));
   }
 
   const parsed = UploadResponse.safeParse(await res.json());

@@ -28,7 +28,13 @@ A local-first web app that turns photos of paper receipts into structured, persi
 
 **Payment method**: How a receipt was paid, drawn from a controlled set: `cash`, `card`, or `other` (for any unrecognized value). _Avoid_: Payment, tender type, payment type.
 
-**Transaction datetime**: The date and time the purchase was made. Distinct from the upload time (when the receipt image was added). _Avoid_: Purchase date, receipt date.
+**Transaction datetime**: The date and time the purchase was made, as printed on the receipt — a local wall clock with no timezone attached. Distinct from the upload time (when the receipt image was added). _Avoid_: Purchase date, receipt date.
+
+**Spending day**: The calendar day a receipt's transaction datetime falls on, read from the receipt itself rather than derived from the viewer's or the server's timezone. Every chart, filter and total groups by it, so a receipt never changes day because it was viewed from another country. _Avoid_: Bucket date, local date, chart day.
+
+**Drill-down**: The list of rows a single chart datum was summed from — receipts for a day, month, merchant or integrity datum, and line items grouped under their receipt for a category datum, because a bar on that chart sums line items rather than totals. It always opens beneath its own chart, and its total equals that datum's. _Avoid_: Breakdown, detail view, expansion.
+
+**Today**: The calendar day the reader is on now — the date a trailing window ends, and the date the assistant is told. Read from the viewer's own zone: the `cf-timezone` header the edge adds, falling back to the account's zone, then to `Australia/Brisbane`. Every surface resolves that one chain in that one order, so the assistant and the charts cannot disagree about the day. Distinct from the spending day, which is stored on the receipt. _Avoid_: Current date, server date, receipt date.
 
 **Totals**: The money amounts stated on a receipt. The total is the amount paid and is required. The subtotal is the receipt's printed subtotal — the sum of the line items, GST-inclusive — and is present only when the receipt prints one. GST is the tax component included within the total, never an amount added to it, and is present only when the receipt states it. _Avoid_: Sum, grand total, amount.
 

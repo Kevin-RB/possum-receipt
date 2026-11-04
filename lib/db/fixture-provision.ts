@@ -19,12 +19,11 @@ import { receiptItems } from "@/lib/db/schema/receipt-item";
  */
 
 /**
- * Better Auth's synthetic issuer for password sign-in. It is
- * `local:${encodeURIComponent(providerId)}` (`createLocalAccountIssuer` in
- * `@better-auth/core`, which `better-auth` does not re-export), and the
- * sign-in lookup compares against this exact value.
+ * Better Auth identifies a password account by `providerId` and `accountId`
+ * alone, and the sign-up path uses these two values (`accountId` is the user
+ * id). The fixture copies them so its account is indistinguishable from a
+ * signed-up one.
  */
-const CREDENTIAL_ISSUER = "local:credential";
 const CREDENTIAL_PROVIDER = "credential";
 
 export interface FixtureState {
@@ -224,7 +223,6 @@ export const applyFixture = async (
       await tx.insert(account).values({
         accountId: userId,
         id: randomUUID(),
-        issuer: CREDENTIAL_ISSUER,
         password: await hashPassword(FIXTURE_PASSWORD),
         providerId: CREDENTIAL_PROVIDER,
         userId,

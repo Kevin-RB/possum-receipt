@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 
 import { auth } from "@/lib/auth";
 import { findReceiptByIdForOwner } from "@/lib/db";
+import { USER_ERROR } from "@/lib/errors";
 import {
   BUCKET,
   createPresignedUrl,
@@ -23,7 +24,10 @@ export const POST = async (
   const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: USER_ERROR.unauthorized },
+      { status: 401 }
+    );
   }
 
   const { receiptId } = paramsSchema.parse(await params);

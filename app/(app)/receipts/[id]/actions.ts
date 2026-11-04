@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth/dal";
 import { db, listCategoryOptions, receiptItems, receipts } from "@/lib/db";
 import { receiptToFlat } from "@/lib/db/receipt-mapping";
+import { reportError, USER_ERROR } from "@/lib/errors";
 import { reconcile } from "@/lib/receipt/integrity";
 import { normalizeLineItems } from "@/lib/receipt/line-item-money";
 import { planLineItemChanges } from "@/lib/receipt/line-items";
@@ -17,13 +18,13 @@ export const updateReceipt = async (input: UpdateReceiptInput) => {
   const session = await getSession();
 
   if (!session) {
-    return { error: "Receipt is not editable", success: false as const };
+    return { error: USER_ERROR.unauthorized, success: false as const };
   }
 
   const parsed = updateReceiptSchema.safeParse(input);
 
   if (!parsed.success) {
-    return { error: "Validation failed", success: false as const };
+    return { error: USER_ERROR.invalidInput, success: false as const };
   }
 
   const {
@@ -46,7 +47,7 @@ export const updateReceipt = async (input: UpdateReceiptInput) => {
   });
 
   if (!existing || existing.status !== "done") {
-    return { error: "Receipt is not editable", success: false as const };
+    return { error: USER_ERROR.receiptNotEditable, success: false as const };
   }
 
   // Categories are bounded by the taxonomy: a submitted id that is not a leaf
@@ -59,7 +60,7 @@ export const updateReceipt = async (input: UpdateReceiptInput) => {
     const options = await listCategoryOptions();
     const leafIds = new Set(options.map((option) => option.id));
     if (categoryIds.some((categoryId) => !leafIds.has(categoryId))) {
-      return { error: "Validation failed", success: false as const };
+      return { error: USER_ERROR.invalidInput, success: false as const };
     }
   }
 
@@ -105,8 +106,9 @@ export const updateReceipt = async (input: UpdateReceiptInput) => {
           .where(inArray(receiptItems.id, plan.removals));
       }
     });
-  } catch {
-    return { error: "Failed to save receipt", success: false as const };
+  } catch (error) {
+    reportError("receipts.update", error);
+    return { error: USER_ERROR.saveFailed, success: false as const };
   }
 
   revalidatePath(`/receipts/${receiptId}`);

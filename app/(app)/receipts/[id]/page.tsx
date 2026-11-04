@@ -9,6 +9,7 @@ import { groupCategoryOptions } from "@/lib/category/options";
 import { findReceiptByIdWithItems, listCategoryOptions } from "@/lib/db";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
 import { cn } from "@/lib/utils";
+import { viewerToday } from "@/lib/viewer";
 
 import { ReceiptEditForm } from "./receipt-edit-form";
 
@@ -88,6 +89,10 @@ const ReceiptDetailPage = async ({ params }: ReceiptDetailPageProps) => {
   const categoryGroups = isEditable
     ? groupCategoryOptions(await listCategoryOptions())
     : [];
+  // The date field's ceiling: a receipt cannot be bought after the viewer's
+  // own today, which a client component cannot know at render time without
+  // disagreeing with the server-rendered one.
+  const today = await viewerToday(session.user.timezone);
 
   return (
     <main className="container mx-auto p-6">
@@ -114,7 +119,11 @@ const ReceiptDetailPage = async ({ params }: ReceiptDetailPageProps) => {
               receiptId={receipt.id}
             />
           </div>
-          <ReceiptEditForm categoryGroups={categoryGroups} receipt={receipt} />
+          <ReceiptEditForm
+            categoryGroups={categoryGroups}
+            receipt={receipt}
+            today={today.toString()}
+          />
         </div>
       ) : (
         <ReceiptImage

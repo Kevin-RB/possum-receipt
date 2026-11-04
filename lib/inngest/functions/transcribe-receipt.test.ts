@@ -191,6 +191,9 @@ const createEngine = (
     },
   });
 
+const reprocess = (overrides?: Partial<StepStub>, realSteps: string[] = []) =>
+  createEngine(overrides, realSteps, reprocessEvent);
+
 describe("transcribeReceipt function", () => {
   beforeEach(() => {
     mockDelete.mockClear();
@@ -511,11 +514,6 @@ describe("transcribeReceipt function", () => {
   });
 
   describe("re-processing", () => {
-    const reprocess = (
-      overrides?: Partial<StepStub>,
-      realSteps: string[] = []
-    ) => createEngine(overrides, realSteps, reprocessEvent);
-
     it("uses the models the run was started with", async () => {
       mockParse.mockResolvedValueOnce(mockExtraction);
 

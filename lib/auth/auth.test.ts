@@ -20,6 +20,17 @@ describe("auth wiring", () => {
     });
   });
 
+  it("captures the account's timezone as an optional sign-up field", () => {
+    // Optional and nullable by design: Better Auth writes what the form sends,
+    // and an account created before the column existed has no zone at all.
+    // `resolveTimezone` treats both the same.
+    expect(auth.options.user?.additionalFields?.timezone).toMatchObject({
+      input: true,
+      required: false,
+      type: "string",
+    });
+  });
+
   it("enables rate limiting", () => {
     expect(auth.options.rateLimit?.enabled).toBeTruthy();
   });

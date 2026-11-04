@@ -15,6 +15,15 @@ on:
       - reopened
       - synchronize
 
+# One run in flight per pull request. A superseded run is cancelled rather than
+# left to finish and report first: `edited` means an agent rewriting a PR body
+# starts a full install/typecheck/lint/test, and a push a minute later starts
+# another. The newest run always reports the status, so cancelling the older one
+# loses nothing and stops a stale run from overwriting a newer result.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: Typecheck, lint, test

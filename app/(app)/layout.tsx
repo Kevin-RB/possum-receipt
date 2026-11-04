@@ -29,8 +29,12 @@ const AppLayout = async ({ children }: { children: React.ReactNode }) => {
             </div>
           </header>
           {/* The one scroll area for every page: no document scrolling, so the
-              header stays put and the iOS URL bar cannot resize mid-scroll. */}
-          <div className="pb-safe flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+              header stays put and the iOS URL bar cannot resize mid-scroll.
+              `scrollbar-gutter: stable` keeps the bar's width reserved when a
+              page is short enough not to scroll. Without it the content area
+              gains the scrollbar's width the moment the last receipt page is
+              six rows instead of ten, and the whole table moves sideways. */}
+          <div className="pb-safe flex min-h-0 flex-1 [scrollbar-gutter:stable] flex-col overflow-y-auto overscroll-contain">
             {children}
           </div>
         </SidebarInset>

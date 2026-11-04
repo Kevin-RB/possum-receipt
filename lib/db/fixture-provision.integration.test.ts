@@ -200,7 +200,6 @@ describeWithDatabase(
       await db.insert(account).values({
         accountId: ownerId,
         id: randomUUID(),
-        issuer: "local:credential",
         password: await hashPassword(OWNER_PASSWORD),
         providerId: "credential",
         userId: ownerId,
