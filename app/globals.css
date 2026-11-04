@@ -318,6 +318,17 @@
   }
 }
 
+/* Recharts clamps the tooltip to the chart's viewBox — the full scrolled width,
+   not the visible strip — so below `sm` it lands past the right edge for most of
+   each screenful and the scroller clips it. Tapping a bar is the phone's
+   affordance, and the drill-down carries the numbers, so the tooltip steps
+   aside at the width where the chart scrolls. */
+@media (width < 40rem) {
+  .overview-chart-scroll .recharts-tooltip-wrapper {
+    display: none;
+  }
+}
+
 /* A chart datum that is not the open one steps back, so the panel beneath the
    chart still has a provenance once the pointer has left the mark that opened
    it. Paint-only — `fill-opacity` reflows nothing — so this needs no
