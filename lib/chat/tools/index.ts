@@ -18,17 +18,22 @@ import { spend_by_merchant } from "./spend-by-merchant";
  * another user's receipts: the owner is closed over server-side and the model
  * never sees or supplies it.
  *
+ * `today` is closed over the same way, and is the caller's: the route resolves
+ * it once from the viewer's clock and passes the same value to the prompt, so a
+ * named period the model picks resolves against the day it was told is today
+ * rather than a second reading of the clock.
+ *
  * Keys are the model-facing tool names, which must match the `tool-<name>`
  * part discriminants the UI switches on in `components/chat/chat-message.tsx`.
  */
-export const buildChatTools = (ownerId: string) =>
+export const buildChatTools = (ownerId: string, today: Temporal.PlainDate) =>
   ({
     ask_user,
-    list_receipts: list_receipts(ownerId),
+    list_receipts: list_receipts(ownerId, today),
     receipt_detail: receipt_detail(ownerId),
-    search_line_items: search_line_items(ownerId),
-    spend_by_category: spend_by_category(ownerId),
-    spend_by_merchant: spend_by_merchant(ownerId),
+    search_line_items: search_line_items(ownerId, today),
+    spend_by_category: spend_by_category(ownerId, today),
+    spend_by_merchant: spend_by_merchant(ownerId, today),
   }) satisfies ToolSet;
 
 export type ChatTools = ReturnType<typeof buildChatTools>;

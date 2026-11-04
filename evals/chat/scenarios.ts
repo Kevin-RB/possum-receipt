@@ -1,6 +1,3 @@
-import "temporal-polyfill/global";
-import { DEFAULT_TIMEZONE, resolveToday } from "@/lib/time";
-
 /**
  * Scenario definitions for the real-model chat eval. Each check asserts one
  * part of a run's behaviour — which tools were called, with which arguments,
@@ -294,22 +291,10 @@ export const expectAnswerNamesNewestDate = (toolName: string): Check => ({
 });
 
 /**
- * "Last month" is the previous calendar month in the zone the eval's agent is
- * told today's date in — the default zone, since an eval run has no viewer
- * behind it. Computing it here keeps the expectation correct whenever the eval
- * runs.
+ * "Last month" and "this year" are asserted by name. The model names a period
+ * and the tools resolve it against the same day the prompt states, so no date
+ * arithmetic — the model's, or this file's — belongs in an expectation.
  */
-const today = resolveToday(DEFAULT_TIMEZONE);
-const thisMonthStart = today.with({ day: 1 });
-const lastMonth = {
-  from: thisMonthStart.subtract({ months: 1 }).toString(),
-  to: thisMonthStart.subtract({ days: 1 }).toString(),
-};
-const thisYear = {
-  from: today.with({ day: 1, month: 1 }).toString(),
-  to: today.toString(),
-};
-
 export const scenarios: Scenario[] = [
   {
     checks: [expectNoTools, expectMaxSteps(1)],
@@ -319,7 +304,10 @@ export const scenarios: Scenario[] = [
   {
     checks: [
       expectTools([
-        { input: { groupBy: "category" }, name: "spend_by_category" },
+        {
+          input: { groupBy: "category", range: "this_year" },
+          name: "spend_by_category",
+        },
       ]),
       expectMaxSteps(2),
     ],
@@ -337,9 +325,12 @@ export const scenarios: Scenario[] = [
   },
   {
     checks: [
-      expectTools([{ input: lastMonth, name: "spend_by_merchant" }], {
-        allowExtra: ["list_receipts"],
-      }),
+      expectTools(
+        [{ input: { range: "last_month" }, name: "spend_by_merchant" }],
+        {
+          allowExtra: ["list_receipts"],
+        }
+      ),
       expectMaxSteps(3),
     ],
     name: "merchant spend, last month",
@@ -356,7 +347,10 @@ export const scenarios: Scenario[] = [
   {
     checks: [
       expectTools([
-        { input: { category: "Groceries" }, name: "spend_by_category" },
+        {
+          input: { category: "Groceries", range: "this_year" },
+          name: "spend_by_category",
+        },
       ]),
       expectMaxSteps(2),
     ],
@@ -367,7 +361,7 @@ export const scenarios: Scenario[] = [
     checks: [
       expectTools([
         {
-          input: { from: thisYear.from, query: "yogurt" },
+          input: { query: "yogurt", range: "this_year" },
           name: "search_line_items",
         },
       ]),
@@ -378,7 +372,9 @@ export const scenarios: Scenario[] = [
   },
   {
     // No peanuts in the corpus. The point is that a period the user supplied
-    // sends the model straight to the product search, not to ask_user.
+    // sends the model straight to the product search, not to ask_user. "The last
+    // two weeks" is a period no range names, so whichever range the model takes
+    // as nearest is not asserted — only that it did not stop to ask.
     checks: [
       expectTools([{ input: { query: "peanuts" }, name: "search_line_items" }]),
       expectMaxSteps(2),
@@ -390,7 +386,7 @@ export const scenarios: Scenario[] = [
     checks: [
       expectTools([
         {
-          input: { from: thisYear.from, query: "chicken" },
+          input: { query: "chicken", range: "this_year" },
           name: "search_line_items",
         },
       ]),

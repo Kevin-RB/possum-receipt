@@ -31,7 +31,17 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const tools = buildChatTools(session.user.id);
+  // The same chain the pages walk, through the same function — not a second
+  // composition of it, which is how the assistant and the charts end up on
+  // different days. A chat-only candidate would be the same mistake in the
+  // other direction: the browser's zone is already on the request.
+  const timezone = await viewerZone(session.user.timezone);
+  const today = resolveToday(timezone);
+
+  // One `today` for the whole request: the tools resolve a named period against
+  // this date, and the prompt states it, so "last month" cannot mean one window
+  // in the sentence the model reads and another in the query it runs.
+  const tools = buildChatTools(session.user.id, today);
 
   // The body is client-supplied, so validate the shape of every message and
   // tool part before it reaches the model.
@@ -45,17 +55,7 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid messages." }, { status: 400 });
   }
 
-  // The same chain the pages walk, through the same function — not a second
-  // composition of it, which is how the assistant and the charts end up on
-  // different days. A chat-only candidate would be the same mistake in the
-  // other direction: the browser's zone is already on the request.
-  const timezone = await viewerZone(session.user.timezone);
-
-  const agent = await createChatAgent(
-    session.user.id,
-    resolveToday(timezone),
-    timezone
-  );
+  const agent = await createChatAgent(session.user.id, today, timezone);
 
   return createAgentUIStreamResponse({
     abortSignal: request.signal,
