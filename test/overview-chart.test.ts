@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { DIM_OPACITY, datumOpacity } from "@/lib/overview-chart";
+import {
+  DIM_OPACITY,
+  datumOpacity,
+  isScrubGesture,
+} from "@/lib/overview-chart";
 
 describe(datumOpacity, () => {
   it("draws every datum at full strength while nothing is open", () => {
@@ -38,5 +42,24 @@ describe(datumOpacity, () => {
         { kind: "merchant", merchant: "Other" }
       )
     ).toBe(DIM_OPACITY);
+  });
+});
+
+describe(isScrubGesture, () => {
+  it("leaves a tap to the click handler", () => {
+    expect(isScrubGesture({ x: 100, y: 100 }, { x: 100, y: 100 })).toBeFalsy();
+    expect(isScrubGesture({ x: 100, y: 100 }, { x: 104, y: 106 })).toBeFalsy();
+  });
+
+  it("counts a horizontal drag as a scrub", () => {
+    expect(isScrubGesture({ x: 100, y: 100 }, { x: 180, y: 106 })).toBeTruthy();
+  });
+
+  it("leaves a vertical drag to the page", () => {
+    expect(isScrubGesture({ x: 100, y: 100 }, { x: 104, y: 180 })).toBeFalsy();
+  });
+
+  it("does not treat a scroll that drifts sideways as a scrub", () => {
+    expect(isScrubGesture({ x: 100, y: 100 }, { x: 120, y: 200 })).toBeFalsy();
   });
 });

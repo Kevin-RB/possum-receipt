@@ -297,6 +297,14 @@
   }
 }
 
+/* The plot is a scrub surface: a horizontal drag belongs to the chart, which
+   moves the tooltip from band to band so a finger can pick a datum the bars are
+   far too thin to be hit directly. A vertical drag still scrolls the page, and
+   pinch-zoom stays available — `pan-y` alone would take it away. */
+[data-slot="chart"] {
+  touch-action: pan-y pinch-zoom;
+}
+
 /* A chart datum that is not the open one steps back, so the panel beneath the
    chart still has a provenance once the pointer has left the mark that opened
    it. Paint-only — `fill-opacity` reflows nothing — so this needs no

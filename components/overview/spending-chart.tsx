@@ -15,6 +15,7 @@ import type { BarShapeProps } from "recharts";
 import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
 import { DrilldownPanel } from "@/components/overview/drilldown-panel";
 import { useChartDrilldown } from "@/components/overview/use-chart-drilldown";
+import { useChartTap } from "@/components/overview/use-chart-tap";
 import {
   Card,
   CardContent,
@@ -62,6 +63,10 @@ export const SpendingChart = ({
     [receipts, range, day]
   );
 
+  // The whole plot is the target: on a phone a day is ~7px wide, narrower than
+  // the finger reading it.
+  const tap = useChartTap(data, toggle);
+
   const monthly = rangeGrain(range) === "month";
 
   // Drawn through `shape` rather than per-datum `Cell`s: recharts deprecated
@@ -71,6 +76,7 @@ export const SpendingChart = ({
     const datum = props.payload as ChartDatum | undefined;
     return (
       <Rectangle
+        className={props.className}
         fill={props.fill}
         fillOpacity={datum ? datumOpacity(datum.bucket, selected) : 1}
         height={props.height}
@@ -104,6 +110,7 @@ export const SpendingChart = ({
           config={chartConfig}
         >
           <BarChart
+            {...tap}
             accessibilityLayer
             data={data}
             margin={{
@@ -138,21 +145,7 @@ export const SpendingChart = ({
                 />
               }
             />
-            <Bar
-              className="cursor-pointer"
-              dataKey="total"
-              fill="var(--color-total)"
-              shape={renderBar}
-              onClick={(entry) => {
-                // Not the handler's `index`: recharts filters zero-length
-                // bars out of the rendered slice, so that index counts the
-                // bars drawn, not the days in `data`.
-                const datum = data[entry.originalDataIndex];
-                if (datum) {
-                  toggle(datum.bucket);
-                }
-              }}
-            />
+            <Bar dataKey="total" fill="var(--color-total)" shape={renderBar} />
           </BarChart>
         </ChartContainer>
         {drilldown ? <DrilldownPanel drilldown={drilldown} /> : null}

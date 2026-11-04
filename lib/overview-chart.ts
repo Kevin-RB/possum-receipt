@@ -83,3 +83,27 @@ export const datumOpacity = (bucket: Bucket, selected: Bucket | null): number =>
   selected === null || bucketKey(selected) === bucketKey(bucket)
     ? 1
     : DIM_OPACITY;
+
+/** How far a finger must travel sideways before it is aiming, not tapping. */
+const SCRUB_SLOP = 10;
+
+/**
+ * Whether a touch that started and ended at these points was a deliberate scrub
+ * across the chart, rather than a tap or the page scrolling.
+ *
+ * Only a horizontal drag counts: a tap is left to the click handler (which
+ * resolves the datum from the click coordinates), and a vertical drag belongs to
+ * the page. Selecting on every `touchend` would open whatever datum the last
+ * drag left behind when the reader flicks the overview.
+ */
+export const isScrubGesture = (start: Point, end: Point): boolean => {
+  const dx = Math.abs(end.x - start.x);
+  const dy = Math.abs(end.y - start.y);
+
+  return dx >= SCRUB_SLOP && dx > dy;
+};
+
+export interface Point {
+  x: number;
+  y: number;
+}
