@@ -1,4 +1,5 @@
 import { AISDKError, APICallError, RetryError } from "ai";
+import { DrizzleQueryError } from "drizzle-orm";
 
 import { isUserMessage, USER_ERROR } from "@/lib/errors";
 
@@ -46,15 +47,38 @@ export interface ChatFailureLog {
   code: ChatErrorCode;
   isRetryable?: boolean;
   /**
-   * Only for errors the AI SDK did not raise — a tool's DB or storage failure,
+   * Only for errors the AI SDK did not raise — a tool's storage failure, say,
    * where the message is the diagnosis. See `chatFailureLog`.
    */
   message?: string;
   model: string;
   name: string;
   origin?: string;
+  /**
+   * A failed query, as the statement alone: repo-authored SQL with placeholders
+   * where the bound values go. Drizzle's own message appends those values, and
+   * for a search they are the reader's words.
+   */
+  statement?: string;
+  /** PostgreSQL's five-character SQLSTATE from the driver error underneath. */
+  sqlState?: string;
   statusCode?: number;
 }
+
+/** The statement is repo-authored, so its length is bounded by the query. */
+const STATEMENT_LIMIT = 400;
+
+/**
+ * A driver's `code` is its SQLSTATE (`42P01`), five characters of `[0-9A-Z]`.
+ * Node's own connection errors use the same field for `ECONNREFUSED`, which is
+ * not a state a statement can fail in — hence the shape check.
+ */
+const sqlStateOf = (cause: unknown): string | undefined => {
+  const code = (cause as { code?: unknown } | undefined)?.code;
+  return typeof code === "string" && /^[0-9A-Z]{5}$/u.test(code)
+    ? code
+    : undefined;
+};
 
 /** The endpoint without its query string: a provider key can ride there. */
 const originOf = (url: string | undefined): string | undefined => {
@@ -86,6 +110,14 @@ const originOf = (url: string | undefined): string | undefined => {
  * not raise, and dropped for the ones it did — `TypeValidationError` prints the
  * value that failed (`Type validation failed: Value: {"query":"yogurt"}`), and
  * for a tool that value is its input.
+ *
+ * A chat tool's failures are usually database ones, and those are the case
+ * where "keep the message" would leak on its own: drizzle wraps every failed
+ * query in a `DrizzleQueryError` whose message is
+ * `Failed query: <sql>\nparams: <bound values>`, and a search binds the
+ * reader's words (`%yogurt%`). That error is projected down to its statement —
+ * the SQL, with the placeholders still in it — plus the driver's SQLSTATE,
+ * which says why it failed without quoting anything.
  */
 export const chatFailureLog = (
   error: unknown,
@@ -109,6 +141,18 @@ export const chatFailureLog = (
 
   if (AISDKError.isInstance(error) || AISDKError.isInstance(cause)) {
     return base;
+  }
+
+  if (error instanceof DrizzleQueryError) {
+    const sqlState = sqlStateOf(error.cause);
+    return {
+      ...base,
+      ...(sqlState ? { sqlState } : {}),
+      statement: error.message
+        .split("\n")[0]
+        .replace(/^Failed query:\s*/u, "")
+        .slice(0, STATEMENT_LIMIT),
+    };
   }
 
   return error instanceof Error ? { ...base, message: error.message } : base;

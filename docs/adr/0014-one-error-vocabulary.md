@@ -46,6 +46,15 @@ The obvious alternative — a custom `Error` subclass carrying a user-facing mes
 
 `chatFailureLog(error, CHAT_MODEL)` in `lib/chat/errors.ts` builds what is recorded instead: the classified code, the model, the error name, the provider's endpoint **origin** (no path, no query string), the status code, and whether a retry could help. The error's own message is dropped with it, because a provider often echoes the request inside it.
 
-`onError` also receives failures that are not provider failures — the AI SDK routes a tool's own error through it — so the rule cannot be "drop every message": a DB or storage error's message is the diagnosis. The projection therefore keeps the message for errors the AI SDK did not raise, and drops it for the ones it did. `TypeValidationError` renders the value that failed into its message (`Type validation failed: Value: {"query":"yogurt"}`), which for a tool is its input — the model's arguments, which routinely quote the reader.
+`onError` also receives failures that are not provider failures — the AI SDK routes a tool's own error through it — so the rule cannot be "drop every message": a storage error's message is the diagnosis. The projection therefore keeps the message for errors the AI SDK did not raise, and drops it for the ones it did. `TypeValidationError` renders the value that failed into its message (`Type validation failed: Value: {"query":"yogurt"}`), which for a tool is its input — the model's arguments, which routinely quote the reader.
+
+A chat tool's failure is usually a database one, and there the message is the query as much as the diagnosis. Drizzle wraps every failed query in a `DrizzleQueryError` whose message is `Failed query: <sql>\nparams: <bound values>`, and a search binds the reader's own words:
+
+```text
+Failed query: select * from "receipt_items" where "name" ilike $1
+params: %yogurt%
+```
+
+So a query failure is projected to its **statement** — the SQL, with the placeholders still in it — plus the driver's five-character SQLSTATE (`42P01` undefined table, `57014` statement cancelled, `23505` duplicate key). What ran and why are both in the log; neither quotes a value. The bound values are the one thing this boundary must not keep, because they are the reader's text in a different costume.
 
 Every other boundary still logs the raw cause. Those boundaries handle errors the app itself raised, and nothing of the reader's rides on one.

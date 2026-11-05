@@ -1,4 +1,5 @@
 import { APICallError, RetryError, TypeValidationError } from "ai";
+import { DrizzleQueryError } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { USER_ERROR } from "@/lib/errors";
@@ -126,6 +127,57 @@ describe(chatFailureLog, () => {
       message: 'relation "receipts" does not exist',
       model: "gemma",
       name: "Error",
+    });
+  });
+
+  it("logs a failed query's statement, never its bound values", () => {
+    // The regression this pins: a chat tool's failure is usually a database
+    // one, and drizzle's message is `Failed query: <sql>\nparams: <values>`.
+    // For `search_line_items` those values are `%<what the reader typed>%`, so
+    // keeping the message would put the search term back in `[chat]`.
+    const logged = JSON.stringify(
+      chatFailureLog(
+        new DrizzleQueryError(
+          'select "receipt_items"."name" from "receipt_items" where "receipt_items"."name" ilike $2',
+          ["owner-1", "%yogurt%"],
+          Object.assign(new Error('relation "receipt_items" does not exist'), {
+            code: "42P01",
+          })
+        ),
+        "gemma"
+      )
+    );
+
+    expect(logged).not.toContain("yogurt");
+    expect(JSON.parse(logged)).toStrictEqual({
+      code: "generic",
+      model: "gemma",
+      name: "DrizzleQueryError",
+      sqlState: "42P01",
+      statement:
+        'select "receipt_items"."name" from "receipt_items" where "receipt_items"."name" ilike $2',
+    });
+  });
+
+  it("omits a code that is not a SQLSTATE", () => {
+    // Node reports a dead connection with the same field, as `ECONNREFUSED`.
+    // Reporting it as a statement's state would be wrong, so the shape decides.
+    expect(
+      chatFailureLog(
+        new DrizzleQueryError(
+          "select 1",
+          [],
+          Object.assign(new Error("connect ECONNREFUSED"), {
+            code: "ECONNREFUSED",
+          })
+        ),
+        "gemma"
+      )
+    ).toStrictEqual({
+      code: "generic",
+      model: "gemma",
+      name: "DrizzleQueryError",
+      statement: "select 1",
     });
   });
 
