@@ -995,6 +995,42 @@ describe(updateReceipt, () => {
     });
   });
 
+  it("stores a corrected zone from the manual edit", async () => {
+    // The picker is how a receipt photographed somewhere other than where it
+    // was printed gets put right (#200). The printed time is untouched.
+    await updateReceipt({
+      ...validInput,
+      transactionTimezone: "America/Bogota",
+    });
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionTimezone: "America/Bogota" })
+    );
+  });
+
+  it("clears the zone when the form sends none", async () => {
+    // A manual edit states the whole receipt, so an absent zone is "not set",
+    // not "leave whatever was there".
+    await updateReceipt(validInput);
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionTimezone: null })
+    );
+  });
+
+  it("refuses a zone that names nothing", async () => {
+    const result = await updateReceipt({
+      ...validInput,
+      transactionTimezone: "Australia/Nowhere",
+    });
+
+    expect(result).toStrictEqual({
+      error: USER_ERROR.invalidInput,
+      success: false,
+    });
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
   it("revalidates the receipt path after a successful save", async () => {
     await updateReceipt(validInput);
 

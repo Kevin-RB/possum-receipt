@@ -18,6 +18,7 @@ import type {
   ReceiptDetail,
   ReceiptSummary,
 } from "./output-schemas";
+import type { DateBounds } from "./range";
 
 const SEARCH_LIMIT = 25;
 const LIST_LIMIT = 20;
@@ -58,7 +59,7 @@ const optionalDateFilters = (from?: string, to?: string) => {
  */
 export type CategorySpendGroupBy = "subcategory" | "category";
 
-export interface CategorySpendQuery {
+export interface CategorySpendQuery extends DateBounds {
   /**
    * Narrows to one branch of the taxonomy: a top-level name ("Health") selects
    * that whole subtree, a leaf name ("Pharmacy") selects the single leaf.
@@ -69,9 +70,7 @@ export interface CategorySpendQuery {
 
 export const spendByCategory = async (
   ownerId: string,
-  from: string,
-  to: string,
-  { category, groupBy = "subcategory" }: CategorySpendQuery = {}
+  { category, from, groupBy = "subcategory", to }: CategorySpendQuery = {}
 ): Promise<CategorySpend> => {
   const parentCategories = alias(categories, "parent_categories");
 
@@ -98,8 +97,7 @@ export const spendByCategory = async (
         eq(receipts.userId, ownerId),
         eq(receipts.status, "done"),
         eq(receiptItems.kind, "product"),
-        gte(receipts.transactionDateTime, startOfReceiptDay(from)),
-        lt(receipts.transactionDateTime, startOfNextReceiptDay(to)),
+        ...optionalDateFilters(from, to),
         category
           ? or(eq(topLevelName, category), eq(categories.name, category))
           : undefined
@@ -116,8 +114,7 @@ export const spendByCategory = async (
 
 export const spendByMerchant = async (
   ownerId: string,
-  from: string,
-  to: string
+  { from, to }: DateBounds = {}
 ): Promise<MerchantSpend> => {
   const rows = await db
     .select({
@@ -130,8 +127,7 @@ export const spendByMerchant = async (
       and(
         eq(receipts.userId, ownerId),
         eq(receipts.status, "done"),
-        gte(receipts.transactionDateTime, startOfReceiptDay(from)),
-        lt(receipts.transactionDateTime, startOfNextReceiptDay(to))
+        ...optionalDateFilters(from, to)
       )
     )
     .groupBy(receipts.merchantName)

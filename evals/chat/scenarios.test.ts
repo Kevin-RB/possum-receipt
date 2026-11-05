@@ -22,7 +22,7 @@ describe(expectTools, () => {
       observation({
         tools: [
           {
-            input: { query: "Cheese", to: "2026-09-30" },
+            input: { query: "Cheese", range: "last_month" },
             name: "search_line_items",
             output: {},
           },
@@ -31,7 +31,7 @@ describe(expectTools, () => {
     );
 
     expect(result).toStrictEqual({
-      actual: 'search_line_items {"query":"Cheese","to":"2026-09-30"}',
+      actual: 'search_line_items {"query":"Cheese","range":"last_month"}',
       ok: true,
     });
   });

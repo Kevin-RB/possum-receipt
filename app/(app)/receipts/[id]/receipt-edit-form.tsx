@@ -60,8 +60,10 @@ import { cn } from "@/lib/utils";
 
 import { updateReceipt } from "./actions";
 import { CategorySelect } from "./category-select";
+import { ReceiptZoneCaption } from "./receipt-zone-caption";
 import { updateReceiptSchema } from "./schema";
 import type { UpdateReceiptInput } from "./schema";
+import { TimezoneSelect } from "./timezone-select";
 import { TransactionDateTimeField } from "./transaction-date-time-field";
 
 export type ReceiptWithItems = ReceiptSelect & {
@@ -73,6 +75,12 @@ interface ReceiptEditFormProps {
   receipt: ReceiptWithItems;
   /** The viewer's day, resolved on the server — the date field's ceiling. */
   today: string;
+  /**
+   * The zone the viewer reads in, resolved on the server through the one chain
+   * (ADR-0016). The zone caption needs it, and a client component cannot
+   * resolve it without disagreeing with the server-rendered copy.
+   */
+  viewerZone: string;
 }
 
 type FormValues = z.input<typeof updateReceiptSchema>;
@@ -148,6 +156,7 @@ const buildDefaultValues = (receipt: ReceiptWithItems): FormValues => {
     receiptId: receipt.id,
     totals: nested.totals,
     transaction: nested.transaction,
+    transactionTimezone: receipt.transactionTimezone ?? undefined,
   };
 };
 
@@ -365,6 +374,7 @@ export const ReceiptEditForm = ({
   categoryGroups,
   receipt,
   today,
+  viewerZone,
 }: ReceiptEditFormProps) => {
   const {
     control,
@@ -393,6 +403,10 @@ export const ReceiptEditForm = ({
 
   const watchedItems = useWatch({ control, name: "items" });
   const watchedTotals = useWatch({ control, name: "totals" });
+  // The caption follows the form rather than the row, so a corrected zone or
+  // time is visible before the save.
+  const watchedDateTime = useWatch({ control, name: "transaction.datetime" });
+  const watchedTimezone = useWatch({ control, name: "transactionTimezone" });
 
   const statedTotal =
     watchedTotals?.total === undefined
@@ -537,6 +551,32 @@ export const ReceiptEditForm = ({
                       />
                     )}
                   />
+                  <ReceiptZoneCaption
+                    viewerZone={viewerZone}
+                    wallClock={watchedDateTime}
+                    zone={watchedTimezone}
+                  />
+                </FieldContent>
+              </Field>
+              <Field>
+                <FieldLabel>Added from</FieldLabel>
+                <FieldContent>
+                  <Controller
+                    control={control}
+                    name="transactionTimezone"
+                    render={({ field: timezoneField }) => (
+                      <TimezoneSelect
+                        onValueChange={(value) => timezoneField.onChange(value)}
+                        value={timezoneField.value}
+                      />
+                    )}
+                  />
+                  <FieldDescription>
+                    Where this receipt was added from, filled in by the browser
+                    that uploaded it. It labels the time above; it never changes
+                    the date.
+                  </FieldDescription>
+                  <FormFieldError error={errors.transactionTimezone} />
                 </FieldContent>
               </Field>
               <Field>

@@ -14,6 +14,7 @@ import { DEFAULT_TIMEZONE } from "@/lib/time";
 const state = vi.hoisted(() => ({
   created: [] as { date: string; ownerId: string; timezone: string }[],
   header: undefined as string | undefined,
+  tools: [] as { date: string; ownerId: string }[],
 }));
 
 // @ts-expect-error only `get` is reached; the rest of `Headers` is unused
@@ -49,7 +50,12 @@ vi.mock(import("@/lib/chat/agent"), () => ({
 }));
 
 // @ts-expect-error the route only passes the tool set through to the SDK
-vi.mock(import("@/lib/chat/tools"), () => ({ buildChatTools: () => ({}) }));
+vi.mock(import("@/lib/chat/tools"), () => ({
+  buildChatTools: (ownerId: string, today: Temporal.PlainDate) => {
+    state.tools.push({ date: today.toString(), ownerId });
+    return {};
+  },
+}));
 // @ts-expect-error the messages are already trusted in this test
 vi.mock(import("@/lib/chat/trust"), () => ({
   discardUntrustedToolOutputs: (messages: unknown) => messages,
@@ -73,6 +79,7 @@ const isoDayIn = (timezone: string) =>
 
 const post = async (body: Record<string, unknown>, accountZone?: string) => {
   state.created.length = 0;
+  state.tools.length = 0;
   getSession.mockResolvedValue({
     user: { id: "owner-1", timezone: accountZone ?? null },
   });
@@ -83,7 +90,7 @@ const post = async (body: Record<string, unknown>, accountZone?: string) => {
   });
 
   await POST(request);
-  return state.created[0];
+  return { ...state.created[0], tools: { ...state.tools[0] } };
 };
 
 describe("POST /api/chat resolves today", () => {
@@ -131,6 +138,24 @@ describe("POST /api/chat resolves today", () => {
     const resolved = await post({ timezone: "Pacific/Kiritimati" });
 
     expect(resolved?.timezone).toBe("Etc/GMT+12");
+  });
+
+  it("gives the tools the same today the prompt got", async () => {
+    // The tools resolve a named period ("last_month") against this date. If they
+    // were handed a second reading of the clock, a viewer whose day turned over
+    // between the two calls would get a window that contradicts the prompt —
+    // which is the whole reason the arithmetic moved server-side.
+    state.header = "Etc/GMT+12";
+
+    const resolved = await post({});
+
+    expect(resolved.tools).toStrictEqual({
+      date: resolved.date,
+      ownerId: "owner-1",
+    });
+    // And that day is the viewer's, not the server's: the same zone the prompt
+    // is told about is the one the period resolves in.
+    expect(resolved.date).toBe(isoDayIn("Etc/GMT+12"));
   });
 
   it("rejects an unauthenticated request before resolving anything", async () => {

@@ -34,6 +34,7 @@ export const updateReceipt = async (input: UpdateReceiptInput) => {
     receiptId,
     totals,
     transaction,
+    transactionTimezone,
   } = parsed.data;
 
   // A discount removes from the total, so the saved amount is coerced to the
@@ -82,6 +83,11 @@ export const updateReceipt = async (input: UpdateReceiptInput) => {
         .set({
           ...receiptToFlat({ merchant, payment, totals, transaction }),
           hasIntegrityWarning,
+          // Written beside the flattened extraction columns rather than inside
+          // them: the zone is the app's, not the model's, so it must not travel
+          // on the shape a re-process rewrites. Absent means "not set" — a
+          // manual edit states the whole receipt.
+          transactionTimezone: transactionTimezone ?? null,
         })
         .where(eq(receipts.id, receiptId));
 

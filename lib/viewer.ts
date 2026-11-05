@@ -67,6 +67,21 @@ export const viewerZone = async (
 ): Promise<string> => resolveTimezone(await viewerTimezone(), accountTimezone);
 
 /**
+ * Both halves of the viewer's clock, walked once.
+ *
+ * A page that needs the zone *and* the day asks for them together, so the one
+ * composition of the chain stays here: the two answers are computed from the
+ * same zone by construction, not by a caller remembering to derive one from the
+ * other.
+ */
+export const viewerClock = async (
+  accountTimezone?: string | null
+): Promise<{ timezone: string; today: Temporal.PlainDate }> => {
+  const timezone = await viewerZone(accountTimezone);
+  return { timezone, today: resolveToday(timezone) };
+};
+
+/**
  * The viewer's "today" for a server render: the zone the edge reported, then
  * the zone the account was created in, then the constant.
  *
@@ -77,5 +92,7 @@ export const viewerZone = async (
  */
 export const viewerToday = async (
   accountTimezone?: string | null
-): Promise<Temporal.PlainDate> =>
-  resolveToday(await viewerZone(accountTimezone));
+): Promise<Temporal.PlainDate> => {
+  const clock = await viewerClock(accountTimezone);
+  return clock.today;
+};

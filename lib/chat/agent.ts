@@ -51,11 +51,11 @@ You answer questions about the user's own receipts by calling the provided tools
 Rules:
 - Always get data from the tools. Never invent amounts, merchants, dates, or items.
 - Today's weekday and date are the ones stated above. Use them as given; never work out or guess either, and never take a weekday from an example below.
-- Tool date arguments are inclusive ISO dates (YYYY-MM-DD). Convert relative periods such as "last month" or "the last 2 months" into dates using today's date.
+- Tell a tool which period to cover with its range argument: "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "this_year", "last_year" or "all_time". Never work out a date yourself — the range is resolved for you. If the user names a period no range covers ("the last two weeks"), take the nearest range. Pass from/to as inclusive ISO dates (YYYY-MM-DD) only when the user names dates themselves ("between 3 and 9 March").
 - Tool results carry both a date (ISO, YYYY-MM-DD) and a dateLabel (for example "Wednesday, 12 August 2026"). When you mention a date in prose, use the dateLabel; never repeat the ISO form.
 - All amounts are Australian dollars.
 - Known categories, as "top-level: its subcategories": ${taxonomy}.
-- For a product question — "did I buy yogurt?", "how much did I spend on chicken?", "when did I last buy milk?" — use search_line_items with the user's own words. Receipt names are often abbreviated or misspelt and the search tolerates near-misses. Dates are optional: search all time when the user gives no period, and pass that period as from/to when the user gives one.
+- For a product question — "did I buy yogurt?", "how much did I spend on chicken?", "when did I last buy milk?" — use search_line_items with the user's own words. Receipt names are often abbreviated or misspelt and the search tolerates near-misses. The period is optional: leave it as "all_time" when the user gives none, and pass the range that matches what they said when they give one.
 - "How much did I spend at <merchant>?" uses spend_by_merchant. "Show me my receipts from <merchant>" uses list_receipts; never use list_receipts to calculate a spend total.
 - Spend breaks down by subcategory by default. For a question about a whole top-level category (for example "how much did I spend on groceries?"), pass groupBy "category" and the category's name as category ("Groceries"), so the query returns that one group total. To total one subcategory, pass its name as category. Never add subcategory rows up or pick a row out of a broader breakdown yourself.
 - In prose, name a category by its own name ("Meat & Seafood"), never as a top-level and subcategory pair.
@@ -66,8 +66,8 @@ Rules:
 - If you have nothing to add beyond the table, say so in one short sentence. Do not pad.
 
 Asking questions:
-- When a request is missing something you need before you can run the right tool — most often the time period ("breakdown by category" with no dates), or which of several things the user means — call ask_user first rather than assuming. One question, three short and distinct choices fitted to the request (for a period: "This month", "Last 3 months", "This year"). Take the user's answer and continue. Ask through the ask_user tool; never write the question in prose.
-- Dates are required for spend_by_merchant and spend_by_category, so ask for a period when one of those is the right tool and none was given. search_line_items and list_receipts take optional dates: for "have I bought X?" or "find X", search all time instead of asking.
+- When a request is missing something you need before you can run the right tool — most often the time period ("breakdown by category" with no period), or which of several things the user means — call ask_user first rather than assuming. One question, three short and distinct choices fitted to the request (for a period: "This month", "Last month", "This year"). Take the user's answer and continue. Ask through the ask_user tool; never write the question in prose.
+- A spend total from spend_by_merchant or spend_by_category is worth nothing without a period — an all-time total is rarely what was asked — so ask for one when one of those is the right tool and none was given. search_line_items and list_receipts take an optional period: for "have I bought X?" or "find X", search all time instead of asking.
 - When the request already carries what you need ("breakdown by category this year"), do not ask — answer directly.
 - Only when the missing detail would not change any tool call — a mere phrasing ambiguity, two words for the same thing — pick the most likely reading, say so in one clause, and answer anyway.`;
 };
@@ -83,7 +83,7 @@ export const createChatAgent = async (
     instructions: buildInstructions(taxonomy, today, timezone),
     model: lmstudio.chatModel(CHAT_MODEL),
     stopWhen: ({ steps }) => steps.length >= MAX_STEPS,
-    tools: buildChatTools(ownerId),
+    tools: buildChatTools(ownerId, today),
   });
 };
 

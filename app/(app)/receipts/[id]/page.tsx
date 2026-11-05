@@ -8,10 +8,12 @@ import { requireSession } from "@/lib/auth/dal";
 import { groupCategoryOptions } from "@/lib/category/options";
 import { findReceiptByIdWithItems, listCategoryOptions } from "@/lib/db";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
+import { formatReceiptDateTime } from "@/lib/receipt/datetime";
 import { cn } from "@/lib/utils";
-import { viewerToday } from "@/lib/viewer";
+import { viewerClock } from "@/lib/viewer";
 
 import { ReceiptEditForm } from "./receipt-edit-form";
+import { ReceiptZoneCaption } from "./receipt-zone-caption";
 
 interface ReceiptDetailPageProps {
   params: Promise<{ id: string }>;
@@ -89,10 +91,12 @@ const ReceiptDetailPage = async ({ params }: ReceiptDetailPageProps) => {
   const categoryGroups = isEditable
     ? groupCategoryOptions(await listCategoryOptions())
     : [];
-  // The date field's ceiling: a receipt cannot be bought after the viewer's
-  // own today, which a client component cannot know at render time without
-  // disagreeing with the server-rendered one.
-  const today = await viewerToday(session.user.timezone);
+  // One resolved clock for the render: the date field's ceiling (a receipt
+  // cannot be bought after the viewer's own today) and the receipt's own zone
+  // caption, which says what its printed time reads on the viewer's clock.
+  // Both are resolved here because a client component cannot know either
+  // without disagreeing with the server-rendered copy.
+  const { timezone, today } = await viewerClock(session.user.timezone);
 
   return (
     <main className="container mx-auto p-6">
@@ -123,14 +127,32 @@ const ReceiptDetailPage = async ({ params }: ReceiptDetailPageProps) => {
             categoryGroups={categoryGroups}
             receipt={receipt}
             today={today.toString()}
+            viewerZone={timezone}
           />
         </div>
       ) : (
-        <ReceiptImage
-          className="lg:h-[calc(100dvh-5rem)] lg:min-h-0"
-          hasImage={!!receipt.objectKey}
-          receiptId={receipt.id}
-        />
+        <>
+          {/* A receipt that is still processing has no form, but a re-process
+              keeps the datetime the last run stored — so the clock it was
+              printed at, and where it was added from, are still worth a line. */}
+          {receipt.transactionDateTime ? (
+            <div className="mb-4">
+              <p className="text-sm">
+                {formatReceiptDateTime(receipt.transactionDateTime)}
+              </p>
+              <ReceiptZoneCaption
+                viewerZone={timezone}
+                wallClock={receipt.transactionDateTime}
+                zone={receipt.transactionTimezone ?? undefined}
+              />
+            </div>
+          ) : null}
+          <ReceiptImage
+            className="lg:h-[calc(100dvh-5rem)] lg:min-h-0"
+            hasImage={!!receipt.objectKey}
+            receiptId={receipt.id}
+          />
+        </>
       )}
 
       {receipt.transcript ? (

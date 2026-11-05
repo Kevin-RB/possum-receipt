@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
+import { browserTimezone } from "@/lib/browser-timezone";
 import { isUserMessage, USER_ERROR } from "@/lib/errors";
 import { compressReceiptImage } from "@/lib/images/compress-receipt-image";
 import { ACCEPTED_MIME_TYPES } from "@/lib/storage/constants";
@@ -63,6 +64,9 @@ const uploadReceipt = async (
     body: JSON.stringify({
       contentType: file.type,
       fileSize: file.size,
+      // Read at upload time, not at render time: the reader may have travelled
+      // since the page loaded. See #200.
+      timezone: browserTimezone(),
     }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
