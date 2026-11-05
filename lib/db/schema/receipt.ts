@@ -98,6 +98,18 @@ export const receipts = snakeCase.table(
     transactionDateTime: timestamp("transaction_datetime", {
       mode: "string",
     }),
+    /**
+     * The IANA zone the receipt was added from — a caption, never an input to
+     * the day (#200).
+     *
+     * Filled from the browser at upload and corrected by a manual edit, because
+     * the only global signal for "where" is the clock the uploader's device was
+     * reading. It is deliberately not part of the extraction: the printed date
+     * stays the printed date (ADR-0015), so a wrong zone can mislabel a receipt
+     * but can never move it to another day. `NULL` for anything stored before
+     * the column existed, and for a browser that could not name its zone.
+     */
+    transactionTimezone: text(),
     transcript: text(),
     userId: text()
       .notNull()

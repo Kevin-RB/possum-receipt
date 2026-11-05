@@ -10,8 +10,8 @@ import { listReceipts } from "@/lib/db";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
 import { receiptSelectSchema } from "@/lib/db/schema/receipt";
 import { instantToWallClock } from "@/lib/receipt/datetime";
-import { resolveToday } from "@/lib/time";
-import { viewerZone } from "@/lib/viewer";
+import { receiptZone } from "@/lib/receipt/zone-caption";
+import { viewerClock } from "@/lib/viewer";
 
 /**
  * A receipt with no extracted transaction datetime falls back to when it was
@@ -22,22 +22,38 @@ import { viewerZone } from "@/lib/viewer";
  */
 const normalizeReceipt = (
   receipt: ReceiptSelect,
-  timezone: string | undefined
-): ReceiptTable => ({
-  hasIntegrityWarning: receipt.hasIntegrityWarning,
-  id: receipt.id,
-  merchantName: receipt.merchantName ?? "Unknown",
-  paymentMethod: receipt.paymentMethod ?? "-",
-  status: receipt.status as ReceiptTable["status"],
-  total: receipt.total ?? 0,
-  transactionDateTime:
+  timezone: string
+): ReceiptTable => {
+  const transactionDateTime =
     receipt.transactionDateTime ??
-    instantToWallClock(receipt.createdAt, timezone),
-});
+    instantToWallClock(receipt.createdAt, timezone);
+
+  // Only a stored receipt datetime has a zone to name. The fallback above is
+  // the upload instant read in the viewer's own zone, so it is already "your
+  // time" and a label beside it would name the reader's own city back at them.
+  const zone = receipt.transactionDateTime
+    ? receiptZone({
+        viewerZone: timezone,
+        wallClock: receipt.transactionDateTime,
+        zone: receipt.transactionTimezone,
+      })
+    : undefined;
+
+  return {
+    hasIntegrityWarning: receipt.hasIntegrityWarning,
+    id: receipt.id,
+    merchantName: receipt.merchantName ?? "Unknown",
+    paymentMethod: receipt.paymentMethod ?? "-",
+    status: receipt.status as ReceiptTable["status"],
+    total: receipt.total ?? 0,
+    transactionDateTime,
+    zoneLabel: zone?.differs ? zone.label : undefined,
+  };
+};
 
 const getReceiptData = async (
   ownerId: string,
-  timezone: string | undefined
+  timezone: string
 ): Promise<ReceiptTable[]> => {
   const receipts = await listReceipts(ownerId);
   const parsed = receiptSelectSchema.array().safeParse(receipts);
@@ -56,11 +72,8 @@ const ReceiptsPage = async () => {
   // One resolved zone for the render — the same precedence `today` uses — so a
   // pending row's upload time is shown in the reader's zone rather than a fixed
   // one, and a client-supplied header that is not a zone cannot throw here.
-  const timezone = await viewerZone(session.user.timezone);
-  const [receipts, today] = await Promise.all([
-    getReceiptData(session.user.id, timezone),
-    resolveToday(timezone),
-  ]);
+  const { timezone, today } = await viewerClock(session.user.timezone);
+  const receipts = await getReceiptData(session.user.id, timezone);
 
   return (
     <main className="container mx-auto flex flex-col gap-6 p-6">

@@ -175,6 +175,60 @@ describe("POST /api/upload", () => {
     expect(body.error).toBe("fileSize must be > 0");
   });
 
+  it("records the zone the browser sent, as the receipt's caption", async () => {
+    // The one signal the app has for "where was this added from" — a browser
+    // call, not an address parse or a model guess (#200).
+    await POST(
+      new Request("http://localhost/api/upload", {
+        body: JSON.stringify({
+          contentType: "image/jpeg",
+          fileSize: 100_000,
+          timezone: "America/Bogota",
+        }),
+        method: "POST",
+      })
+    );
+
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionTimezone: "America/Bogota" })
+    );
+  });
+
+  it("stores no zone when the browser sent none", async () => {
+    // A browser that cannot answer is not a failure: the receipt renders
+    // exactly as it did before #200.
+    await POST(
+      new Request("http://localhost/api/upload", {
+        body: JSON.stringify({
+          contentType: "image/jpeg",
+          fileSize: 100_000,
+        }),
+        method: "POST",
+      })
+    );
+
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionTimezone: null })
+    );
+  });
+
+  it("ignores a zone name that is not a zone", async () => {
+    await POST(
+      new Request("http://localhost/api/upload", {
+        body: JSON.stringify({
+          contentType: "image/jpeg",
+          fileSize: 100_000,
+          timezone: "Mars/Olympus_Mons",
+        }),
+        method: "POST",
+      })
+    );
+
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionTimezone: null })
+    );
+  });
+
   it("accepts a valid JPEG upload request", async () => {
     const res = await POST(
       new Request("http://localhost/api/upload", {

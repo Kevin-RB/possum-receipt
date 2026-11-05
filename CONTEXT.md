@@ -30,6 +30,8 @@ A local-first web app that turns photos of paper receipts into structured, persi
 
 **Transaction datetime**: The date and time the purchase was made, as printed on the receipt — a local wall clock with no timezone attached. Distinct from the upload time (when the receipt image was added). _Avoid_: Purchase date, receipt date.
 
+**Transaction timezone**: The IANA zone a receipt was added from, recorded from the browser at upload and correctable by a manual edit. It is a caption on the printed clock — it can mislabel a receipt, but it never changes its spending day. `NULL` when unknown, and for every receipt stored before the column existed (#200). _Avoid_: Receipt timezone, purchase zone, print zone.
+
 **Spending day**: The calendar day a receipt's transaction datetime falls on, read from the receipt itself rather than derived from the viewer's or the server's timezone. Every chart, filter and total groups by it, so a receipt never changes day because it was viewed from another country. _Avoid_: Bucket date, local date, chart day.
 
 **Drill-down**: The list of rows a single chart datum was summed from — receipts for a day, month, merchant or integrity datum, and line items grouped under their receipt for a category datum, because a bar on that chart sums line items rather than totals. It always opens beneath its own chart, and its total equals that datum's. _Avoid_: Breakdown, detail view, expansion.
