@@ -67,15 +67,6 @@ export const viewerZone = async (
 ): Promise<string> => resolveTimezone(await viewerTimezone(), accountTimezone);
 
 /**
- * The viewer's "today" for a server render: the zone the edge reported, then
- * the zone the account was created in, then the constant.
- *
- * Resolved once per page so every chart, bound and query in it agrees on the
- * day. Pass the result down rather than letting a component read the clock:
- * a client component is server-rendered too, and the two clocks disagree for
- * any viewer not in the server's zone.
- */
-/**
  * Both halves of the viewer's clock, walked once.
  *
  * A page that needs the zone *and* the day asks for them together, so the one
@@ -90,7 +81,15 @@ export const viewerClock = async (
   return { timezone, today: resolveToday(timezone) };
 };
 
-/** The day alone, for a surface that does not need to know the zone. */
+/**
+ * The viewer's "today" for a server render: the zone the edge reported, then
+ * the zone the account was created in, then the constant.
+ *
+ * Resolved once per page so every chart, bound and query in it agrees on the
+ * day. Pass the result down rather than letting a component read the clock:
+ * a client component is server-rendered too, and the two clocks disagree for
+ * any viewer not in the server's zone.
+ */
 export const viewerToday = async (
   accountTimezone?: string | null
 ): Promise<Temporal.PlainDate> => {
