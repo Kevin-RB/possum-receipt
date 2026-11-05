@@ -1,9 +1,10 @@
 import { createAgentUIStreamResponse, validateUIMessages } from "ai";
 import { NextResponse } from "next/server";
 
+import { CHAT_MODEL } from "@/lib/ai/provider";
 import { auth } from "@/lib/auth";
 import { createChatAgent } from "@/lib/chat/agent";
-import { chatErrorCode } from "@/lib/chat/errors";
+import { chatErrorCode, chatFailureLog } from "@/lib/chat/errors";
 import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
 import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
@@ -61,11 +62,12 @@ export const POST = async (request: Request) => {
     abortSignal: request.signal,
     agent,
     // The UI shows the returned string, so it comes from the catalogue and is
-    // written for a reader. The error itself — provider URL, model id, retry
-    // causes — is logged instead: an error part carries no cause, so this is
-    // the only place it exists.
+    // written for a reader. What failed is recorded here instead — an error
+    // part carries no cause, so this is the only place it exists — but as
+    // `chatFailureLog`'s projection, never the error itself: that carries the
+    // messages sent to the model and a URL whose query string can hold a key.
     onError: (error) => {
-      reportError("chat", error);
+      reportError("chat", chatFailureLog(error, CHAT_MODEL));
       return USER_ERROR[chatErrorCode(error)];
     },
     // Everything past this point came off the wire. See `lib/chat/trust.ts`.
