@@ -1,4 +1,4 @@
-import { APICallError, RetryError } from "ai";
+import { AISDKError, APICallError, RetryError } from "ai";
 
 import { isUserMessage, USER_ERROR } from "@/lib/errors";
 
@@ -41,10 +41,15 @@ export const chatErrorText = (error: Error): string => {
   return USER_ERROR.generic;
 };
 
-/** The pieces of a provider failure worth keeping after the request ends. */
+/** The pieces of a chat failure worth keeping after the request ends. */
 export interface ChatFailureLog {
   code: ChatErrorCode;
   isRetryable?: boolean;
+  /**
+   * Only for errors the AI SDK did not raise — a tool's DB or storage failure,
+   * where the message is the diagnosis. See `chatFailureLog`.
+   */
+  message?: string;
   model: string;
   name: string;
   origin?: string;
@@ -66,7 +71,7 @@ const originOf = (url: string | undefined): string | undefined => {
 };
 
 /**
- * The loggable shape of a provider failure.
+ * The loggable shape of a chat failure.
  *
  * An `APICallError` carries `requestBodyValues` — the messages sent to the
  * model, which here include the reader's questions and their receipt text — and
@@ -74,6 +79,13 @@ const originOf = (url: string | undefined): string | undefined => {
  * prints both, and the log outlives the request, so the route records this
  * projection instead: which model, which endpoint, what the provider said, and
  * whether retrying could help. Nothing a reader typed.
+ *
+ * `onError` is not only called for provider failures: the AI SDK routes a
+ * tool's own failure through it too, and there the message *is* the diagnosis
+ * ("relation does not exist"). So the message is kept for errors the SDK did
+ * not raise, and dropped for the ones it did — `TypeValidationError` prints the
+ * value that failed (`Type validation failed: Value: {"query":"yogurt"}`), and
+ * for a tool that value is its input.
  */
 export const chatFailureLog = (
   error: unknown,
@@ -86,14 +98,18 @@ export const chatFailureLog = (
     name: error instanceof Error ? error.name : typeof error,
   };
 
-  if (!APICallError.isInstance(cause)) {
+  if (APICallError.isInstance(cause)) {
+    return {
+      ...base,
+      isRetryable: cause.isRetryable,
+      origin: originOf(cause.url),
+      statusCode: cause.statusCode,
+    };
+  }
+
+  if (AISDKError.isInstance(error) || AISDKError.isInstance(cause)) {
     return base;
   }
 
-  return {
-    ...base,
-    isRetryable: cause.isRetryable,
-    origin: originOf(cause.url),
-    statusCode: cause.statusCode,
-  };
+  return error instanceof Error ? { ...base, message: error.message } : base;
 };

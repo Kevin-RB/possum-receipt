@@ -1,4 +1,4 @@
-import { APICallError, RetryError } from "ai";
+import { APICallError, RetryError, TypeValidationError } from "ai";
 import { describe, expect, it } from "vitest";
 
 import { USER_ERROR } from "@/lib/errors";
@@ -116,11 +116,46 @@ describe(chatFailureLog, () => {
     ).toMatchObject({ statusCode: 429 });
   });
 
-  it("describes an error that never reached a provider at all", () => {
-    expect(chatFailureLog(new TypeError("boom"), "gemma")).toStrictEqual({
+  it("keeps a tool failure's message, which is the diagnosis", () => {
+    // `onError` also receives what a tool threw, and a DB or storage failure is
+    // diagnosed by its message. The app raised it, so it holds no reader text.
+    expect(
+      chatFailureLog(new Error('relation "receipts" does not exist'), "gemma")
+    ).toStrictEqual({
+      code: "generic",
+      message: 'relation "receipts" does not exist',
+      model: "gemma",
+      name: "Error",
+    });
+  });
+
+  it("drops the message of an AI SDK error, which can print what failed", () => {
+    // `TypeValidationError` renders its value into the message, and for a tool
+    // that value is the model's arguments — here a search term the reader
+    // typed. This is why a blanket "keep the message" is not the rule.
+    const logged = JSON.stringify(
+      chatFailureLog(
+        new TypeValidationError({
+          cause: new Error("bad"),
+          value: { query: "yogurt" },
+        }),
+        "gemma"
+      )
+    );
+
+    expect(logged).not.toContain("yogurt");
+    expect(JSON.parse(logged)).toStrictEqual({
       code: "generic",
       model: "gemma",
-      name: "TypeError",
+      name: "AI_TypeValidationError",
+    });
+  });
+
+  it("describes something that was not an error at all", () => {
+    expect(chatFailureLog("boom", "gemma")).toStrictEqual({
+      code: "generic",
+      model: "gemma",
+      name: "string",
     });
   });
 });

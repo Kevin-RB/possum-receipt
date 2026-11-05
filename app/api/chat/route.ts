@@ -62,12 +62,11 @@ export const POST = async (request: Request) => {
     abortSignal: request.signal,
     agent,
     // The UI shows the returned string, so it comes from the catalogue and is
-    // written for a reader. The error itself — provider URL, model id, retry
-    // causes — is logged instead: an error part carries no cause, so this is
-    // the only place it exists.
+    // written for a reader. What failed is recorded here instead — an error
+    // part carries no cause, so this is the only place it exists — but as
+    // `chatFailureLog`'s projection, never the error itself: that carries the
+    // messages sent to the model and a URL whose query string can hold a key.
     onError: (error) => {
-      // A projection, not the error: it carries the messages sent to the model
-      // and a URL that may hold a key. See `chatFailureLog`.
       reportError("chat", chatFailureLog(error, CHAT_MODEL));
       return USER_ERROR[chatErrorCode(error)];
     },
