@@ -40,3 +40,60 @@ export const chatErrorText = (error: Error): string => {
   }
   return USER_ERROR.generic;
 };
+
+/** The pieces of a provider failure worth keeping after the request ends. */
+export interface ChatFailureLog {
+  code: ChatErrorCode;
+  isRetryable?: boolean;
+  model: string;
+  name: string;
+  origin?: string;
+  statusCode?: number;
+}
+
+/** The endpoint without its query string: a provider key can ride there. */
+const originOf = (url: string | undefined): string | undefined => {
+  if (!url) {
+    return;
+  }
+
+  try {
+    return new URL(url).origin;
+  } catch {
+    // A relative or malformed URL: no origin to report, and nothing worth
+    // guessing at.
+  }
+};
+
+/**
+ * The loggable shape of a provider failure.
+ *
+ * An `APICallError` carries `requestBodyValues` — the messages sent to the
+ * model, which here include the reader's questions and their receipt text — and
+ * a `url` that may carry a key in its query string. `console.error(error)`
+ * prints both, and the log outlives the request, so the route records this
+ * projection instead: which model, which endpoint, what the provider said, and
+ * whether retrying could help. Nothing a reader typed.
+ */
+export const chatFailureLog = (
+  error: unknown,
+  model: string
+): ChatFailureLog => {
+  const cause = unwrapRetries(error);
+  const base = {
+    code: chatErrorCode(error),
+    model,
+    name: error instanceof Error ? error.name : typeof error,
+  };
+
+  if (!APICallError.isInstance(cause)) {
+    return base;
+  }
+
+  return {
+    ...base,
+    isRetryable: cause.isRetryable,
+    origin: originOf(cause.url),
+    statusCode: cause.statusCode,
+  };
+};

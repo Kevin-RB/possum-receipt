@@ -1,9 +1,10 @@
 import { createAgentUIStreamResponse, validateUIMessages } from "ai";
 import { NextResponse } from "next/server";
 
+import { CHAT_MODEL } from "@/lib/ai/provider";
 import { auth } from "@/lib/auth";
 import { createChatAgent } from "@/lib/chat/agent";
-import { chatErrorCode } from "@/lib/chat/errors";
+import { chatErrorCode, chatFailureLog } from "@/lib/chat/errors";
 import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
 import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
@@ -65,7 +66,9 @@ export const POST = async (request: Request) => {
     // causes — is logged instead: an error part carries no cause, so this is
     // the only place it exists.
     onError: (error) => {
-      reportError("chat", error);
+      // A projection, not the error: it carries the messages sent to the model
+      // and a URL that may hold a key. See `chatFailureLog`.
+      reportError("chat", chatFailureLog(error, CHAT_MODEL));
       return USER_ERROR[chatErrorCode(error)];
     },
     // Everything past this point came off the wire. See `lib/chat/trust.ts`.
