@@ -9,8 +9,7 @@ import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
 import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
 import { reportError, USER_ERROR } from "@/lib/errors";
-import { resolveToday } from "@/lib/time";
-import { viewerZone } from "@/lib/viewer";
+import { viewerClock } from "@/lib/viewer";
 
 /** The app runs against a local model, so latency is bound by OCR-free local inference. */
 export const maxDuration = 60;
@@ -36,8 +35,7 @@ export const POST = async (request: Request) => {
   // composition of it, which is how the assistant and the charts end up on
   // different days. A chat-only candidate would be the same mistake in the
   // other direction: the browser's zone is already on the request.
-  const timezone = await viewerZone(session.user.timezone);
-  const today = resolveToday(timezone);
+  const { timezone, today } = await viewerClock(session.user.timezone);
 
   // One `today` for the whole request: the tools resolve a named period against
   // this date, and the prompt states it, so "last month" cannot mean one window
