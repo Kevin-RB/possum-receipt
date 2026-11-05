@@ -250,8 +250,8 @@ const resolveOwnerId = async (): Promise<string> => {
 
 const main = async () => {
   const ownerId = await resolveOwnerId();
-  // No viewer behind an eval run, so the agent gets the same fallback zone the
-  // scenarios' date expectations are built from.
+  // No viewer behind an eval run, so the agent gets the fallback zone — and with
+  // it the day every named range the scenarios assert resolves against.
   const agent = await createChatAgent(
     ownerId,
     resolveToday(DEFAULT_TIMEZONE),
