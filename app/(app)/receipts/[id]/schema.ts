@@ -10,6 +10,7 @@ import {
   lineItemKindEnum,
   receiptItemInsertSchema,
 } from "@/lib/db/schema/receipt-item";
+import { isTimezone } from "@/lib/time";
 
 /** An amount the receipt states: never negative, except a discount's unit price. */
 const money = z.number().min(0);
@@ -55,6 +56,16 @@ export const updateReceiptSchema = z.object({
     total: money,
   }),
   transaction: transactionSchema,
+  /**
+   * The zone the receipt was added from, correctable here because the upload
+   * only knows where the photo was taken (#200). Validated as a real zone: the
+   * picker offers nothing else, and an unrecognised name would make the caption
+   * claim something the app cannot render.
+   */
+  transactionTimezone: z
+    .string()
+    .refine(isTimezone, { message: "Unknown timezone" })
+    .optional(),
 });
 
 export type UpdateReceiptInput = z.infer<typeof updateReceiptSchema>;

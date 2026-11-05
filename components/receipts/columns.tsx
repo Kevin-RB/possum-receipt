@@ -41,6 +41,7 @@ import {
   compareWallClocks,
   formatReceiptDateTime,
 } from "@/lib/receipt/datetime";
+import { withZoneLabel } from "@/lib/receipt/zone-caption";
 
 export const receiptTableSchema = z.object({
   hasIntegrityWarning: z.boolean(),
@@ -50,6 +51,12 @@ export const receiptTableSchema = z.object({
   status: z.enum(["uploading", "pending", "processing", "done", "error"]),
   total: z.number(),
   transactionDateTime: z.string(),
+  /**
+   * The city the receipt was added from, and only when that is not the zone the
+   * reader is in (#200). Resolved on the server, because the row is a plain
+   * value object rendered by a shared column definition.
+   */
+  zoneLabel: z.string().optional(),
 });
 
 export type ReceiptTable = z.infer<typeof receiptTableSchema>;
@@ -202,7 +209,10 @@ export const receiptColumns = columnHelper.columns([
     // internally rather than handing a Temporal object to `Intl`.
     cell: ({ row }) => (
       <div className="truncate">
-        {formatReceiptDateTime(row.original.transactionDateTime)}
+        {withZoneLabel(
+          formatReceiptDateTime(row.original.transactionDateTime),
+          row.original.zoneLabel
+        )}
       </div>
     ),
     filterFn: dateRangeFilterFn,

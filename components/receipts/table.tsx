@@ -42,6 +42,7 @@ import {
   formatReceiptShortDate,
   plainDateToLocalDay,
 } from "@/lib/receipt/datetime";
+import { withZoneLabel } from "@/lib/receipt/zone-caption";
 
 interface DataTableProps {
   columns: ColumnDef<DataTableFeatures, ReceiptTable>[];
@@ -118,7 +119,10 @@ const ReceiptCard = ({
       </div>
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground text-xs">
-          {formatReceiptShortDate(receipt.transactionDateTime)}
+          {withZoneLabel(
+            formatReceiptShortDate(receipt.transactionDateTime),
+            receipt.zoneLabel
+          )}
         </span>
         {receipt.hasIntegrityWarning ? (
           <BadgeAlert

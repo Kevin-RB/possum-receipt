@@ -13,6 +13,7 @@ import {
 } from "@/lib/storage/client";
 import { ACCEPTED_MIME_TYPES } from "@/lib/storage/constants";
 import { extensionForMime } from "@/lib/storage/content-type";
+import { isTimezone } from "@/lib/time";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const PRESIGNED_URL_EXPIRY_SECONDS = 60 * 5;
@@ -26,6 +27,13 @@ const UploadRequest = z.object({
     .int({ error: "fileSize must be an integer" })
     .positive({ error: "fileSize must be > 0" })
     .max(MAX_FILE_SIZE, { error: `fileSize must be <= ${MAX_FILE_SIZE}` }),
+  /**
+   * The browser's own zone name — the only signal the app has for where a
+   * receipt was added from (#200). Soft on purpose: a browser that cannot
+   * answer, or answers with something that names no zone, leaves the caption
+   * empty rather than failing the upload.
+   */
+  timezone: z.string().optional(),
 });
 
 export const POST = async (request: Request) => {
@@ -57,7 +65,7 @@ export const POST = async (request: Request) => {
     );
   }
 
-  const { contentType } = parsed.data;
+  const { contentType, timezone } = parsed.data;
 
   // Object keys are namespaced by owner: `users/<userId>/<uuid>.<ext>`. The
   // bucket is shared and private and the app enforces ownership on read, so
@@ -73,6 +81,7 @@ export const POST = async (request: Request) => {
     .values({
       objectKey,
       status: "uploading",
+      transactionTimezone: isTimezone(timezone) ? timezone : null,
       userId: session.user.id,
     })
     .returning({ receiptId: receipts.id });

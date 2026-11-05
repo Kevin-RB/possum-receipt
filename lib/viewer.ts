@@ -75,7 +75,25 @@ export const viewerZone = async (
  * a client component is server-rendered too, and the two clocks disagree for
  * any viewer not in the server's zone.
  */
+/**
+ * Both halves of the viewer's clock, walked once.
+ *
+ * A page that needs the zone *and* the day asks for them together, so the one
+ * composition of the chain stays here: the two answers are computed from the
+ * same zone by construction, not by a caller remembering to derive one from the
+ * other.
+ */
+export const viewerClock = async (
+  accountTimezone?: string | null
+): Promise<{ timezone: string; today: Temporal.PlainDate }> => {
+  const timezone = await viewerZone(accountTimezone);
+  return { timezone, today: resolveToday(timezone) };
+};
+
+/** The day alone, for a surface that does not need to know the zone. */
 export const viewerToday = async (
   accountTimezone?: string | null
-): Promise<Temporal.PlainDate> =>
-  resolveToday(await viewerZone(accountTimezone));
+): Promise<Temporal.PlainDate> => {
+  const clock = await viewerClock(accountTimezone);
+  return clock.today;
+};

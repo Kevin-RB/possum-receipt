@@ -1,0 +1,1 @@
+ALTER TABLE "receipts" ADD COLUMN "transaction_timezone" text;
