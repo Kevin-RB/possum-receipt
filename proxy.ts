@@ -2,7 +2,7 @@ import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up"]);
+const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/prototype"]);
 
 export const proxy = (request: NextRequest) => {
   // Optimistic check only — the real validation is server-side, in each page's
