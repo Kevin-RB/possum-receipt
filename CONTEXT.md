@@ -59,3 +59,11 @@ A local-first web app that turns photos of paper receipts into structured, persi
 **Re-processing**: A second run of extraction over a stored receipt, letting the owner retry a receipt that extracted badly, optionally with a different model. It replaces the stored extraction, so manual edits and user-set categories on that receipt do not survive it. Available from a completed or failed receipt. _Avoid_: Retry (that is re-signing a failed upload), re-extract, re-parse, redo.
 
 **Extraction models**: The pair of models a run uses — the OCR model that transcribes the image and the parse model that turns the transcript into the contract. Fixed by environment for a first extraction, chosen per run when re-processing. _Avoid_: AI model, LLM, the model.
+
+**Provider**: A service the app calls to run a chat model, named in the catalogue by an id such as `openrouter` or `local`. The app owns the credential for every provider it offers; a reader never supplies one. _Avoid_: Vendor, backend, gateway.
+
+**Model**: A specific model id a provider serves, named in the catalogue (for example `deepseek/deepseek-v4.1-flash`, `z-ai/glm-5.3-flash`, or `google/gemma-4-e4b`). What the model picker selects and what the chat runs. _Avoid_: Engine, LLM, AI, checkpoint.
+
+**Catalogue**: The app-owned allowlist of providers and models the picker may offer, each with the capabilities it must support. A selection outside the catalogue is refused before any provider call. _Avoid_: Model list, model registry, config.
+
+**Credential**: The app-owned provider key, supplied by the deployment environment. Read by the server, never sent to a browser, and never written to the database. _Avoid_: API key, token, secret, BYOK.
