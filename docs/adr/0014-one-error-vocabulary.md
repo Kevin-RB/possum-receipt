@@ -34,9 +34,11 @@ The obvious alternative — a custom `Error` subclass carrying a user-facing mes
 
 | Cause | Code | Reader sees |
 | --- | --- | --- |
-| 408 timeout, 429 rate limited, 502 model down, 503 no endpoint meets the routing policy | `busy` | "The assistant is busy right now. Please try again in a moment." |
-| 401 bad key, 402 out of credits or in-flight budget, 403 forbidden, 200 carrying an error, or any provider error with no status | `modelUnavailable` | the existing "isn't responding right now" line |
-| 400 malformed request, and anything that is not a provider error | `generic` | the existing generic line |
+| 408 timeout, 409 conflict, 429 rate limited, and every 5xx — 500, 502 model down, 503 no endpoint meets the routing policy, 504 gateway timeout | `busy` | "The assistant is busy right now. Please try again in a moment." |
+| 401 bad key, 402 out of credits or in-flight budget, 403 forbidden, 404 unknown model id, 200 carrying an error, or a provider error with no status | `modelUnavailable` | the existing "isn't responding right now" line |
+| 400 malformed request, any other 4xx the map does not name, and anything that is not a provider error | `generic` | the existing generic line |
+
+The map is exhaustive on purpose: every provider status lands in exactly one row, so an implementer has no status left to judge. The remaining 5xx and 409 sit in `busy` because the SDK already retries them twice and the reader's next action is the same as for 429; 404 is `modelUnavailable` because a retired or mistyped catalogue id is the operator's problem, like a dead key.
 
 **Only a failure the reader can act on gets its own sentence.** `busy` exists because waiting is an instruction. A bad key or an empty balance is an operator failure delivered to whoever is looking at the screen, so it keeps the line an outage already uses; the distinction lives in the log, where the operator can act on it. Telling an invited reader that the owner's credits ran out would expose the system and help nobody.
 
@@ -55,6 +57,9 @@ The obvious alternative — a custom `Error` subclass carrying a user-facing mes
 - Server action and route response shapes are unchanged, so callers and existing tests keep working.
 - The catalogue is flat, not namespaced, because with one product area and under twenty codes a tree would be structure without a second consumer. If it grows past that, the split is by domain (`USER_ERROR.receipts.*`), not by layer.
 - A `catch` can still forget to call `reportError`; nothing enforces it. Reviewing a `catch` for that call is the guard, in the same spirit as the `never` branch in `agent-steps.tsx`.
+- (2026-11-06) The chat's failure taxonomy is invisible from the browser: one new sentence, and every cause that distinguishes the codes stays in the server log.
+- (2026-11-06) `busy` and `modelUnavailable` are one status map apart, so adding a provider does not add a classifier. Adding a _reader-actionable_ failure the map cannot express is what forces a new code.
+- (2026-11-06) A provider error delivered inside a two-hundred response is a failure, not a success. The chat only streams, so it cannot hit OpenRouter's non-streaming form of that, but any future non-streaming call must not read the status alone.
 
 ## Update (2026-11-05): the chat boundary logs a projection, not the cause
 
@@ -76,7 +81,3 @@ params: %yogurt%
 So a query failure is projected to its **statement** — the SQL, with the placeholders still in it — plus the driver's five-character SQLSTATE (`42P01` undefined table, `57014` statement cancelled, `23505` duplicate key). What ran and why are both in the log; neither quotes a value. The bound values are the one thing this boundary must not keep, because they are the reader's text in a different costume.
 
 Every other boundary still logs the raw cause. Those boundaries handle errors the app itself raised, and nothing of the reader's rides on one.
-
-- The chat's failure taxonomy is invisible from the browser: one new sentence, and every cause that distinguishes the codes stays in the server log.
-- `busy` and `modelUnavailable` are one status map apart, so adding a provider does not add a classifier. Adding a _reader-actionable_ failure the map cannot express is what forces a new code.
-- A provider error delivered inside a two-hundred response is a failure, not a success. The chat only streams, so it cannot hit OpenRouter's non-streaming form of that, but any future non-streaming call must not read the status alone.

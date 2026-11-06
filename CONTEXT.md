@@ -64,6 +64,6 @@ A local-first web app that turns photos of paper receipts into structured, persi
 
 **Model**: A specific model id a provider serves, named in the catalogue (for example `deepseek/deepseek-v4.1-flash`, `z-ai/glm-5.3-flash`, or `google/gemma-4-e4b`). What the model picker selects and what the chat runs. _Avoid_: Engine, LLM, AI, checkpoint.
 
-**Catalogue**: The app-owned allowlist of providers and models the picker may offer, each with the capabilities it must support. A selection outside the catalogue is refused before any provider call. _Avoid_: Registry, model list, config.
+**Catalogue**: The app-owned allowlist of providers and models the picker may offer, each with the capabilities it must support. A selection outside the catalogue is refused before any provider call. _Avoid_: Model list, model registry, config.
 
 **Credential**: The app-owned provider key, supplied by the deployment environment. Read by the server, never sent to a browser, and never written to the database. _Avoid_: API key, token, secret, BYOK.
