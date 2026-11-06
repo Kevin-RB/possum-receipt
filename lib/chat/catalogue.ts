@@ -33,11 +33,21 @@ export const localCatalogue: CatalogueEntry[] = [
 ];
 
 /**
- * The raw model id is the label. `local` is the one exception: the id alone
- * does not say what is running behind it, so it names the model too.
+/**
+ * The label is the model id with its vendor segment dropped — `deepseek-v4.1-flash`,
+ * not `deepseek/deepseek-v4.1-flash`. The provider is either the only one in the
+ * list or the heading above the row, so repeating it on every line is noise.
+ *
+ * `local` is the exception: it has no vendor segment, and the reader needs to
+ * know the request is not leaving for a hosted provider.
  */
-export const labelOf = (entry: CatalogueEntry) =>
-  entry.provider === "local" ? `local (${entry.model})` : entry.model;
+export const labelOf = (entry: CatalogueEntry) => {
+  if (entry.provider === "local") {
+    return `local (${entry.model})`;
+  }
+  const slash = entry.model.indexOf("/");
+  return slash === -1 ? entry.model : entry.model.slice(slash + 1);
+};
 
 /** One string per entry, for the radio group, which takes strings. */
 export const keyOf = (entry: CatalogueEntry) =>
