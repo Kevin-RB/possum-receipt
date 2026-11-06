@@ -27,6 +27,7 @@ import {
   useMessageScrollerScrollable,
 } from "@/components/ui/message-scroller";
 import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
+import { keyOf, remoteCatalogue } from "@/lib/chat/catalogue";
 import { chatErrorText } from "@/lib/chat/errors";
 import { greetingFor } from "@/lib/chat/greeting";
 import { isLastStreaming } from "@/lib/chat/message-parts";
@@ -88,6 +89,9 @@ const findPendingQuestion = (
     : undefined;
 
 export const Chat = ({ firstName }: { firstName: string }) => {
+  // Prototype: the catalogue is the launch one, hardcoded. A real build takes
+  // it from the server (env-gated) and the choice is per conversation.
+  const [model, setModel] = useState(keyOf(remoteCatalogue[0]));
   const {
     addToolOutput,
     error,
@@ -175,7 +179,10 @@ export const Chat = ({ firstName }: { firstName: string }) => {
               </EmptyHeader>
               <EmptyContent className="w-full max-w-3xl">
                 <PromptInput
+                  entries={remoteCatalogue}
                   isBusy={busy}
+                  model={model}
+                  onChangeModel={setModel}
                   onStop={stop}
                   onSubmit={(text) => sendMessage({ text })}
                   placeholder="How can I help you today?"
@@ -257,7 +264,10 @@ export const Chat = ({ firstName }: { firstName: string }) => {
               </p>
             ) : null}
             <PromptInput
+              entries={remoteCatalogue}
               isBusy={busy}
+              model={model}
+              onChangeModel={setModel}
               onStop={stop}
               onSubmit={(text) => sendMessage({ text })}
               placeholder="Ask about your receipts…"

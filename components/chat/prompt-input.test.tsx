@@ -3,12 +3,17 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { keyOf, remoteCatalogue } from "@/lib/chat/catalogue";
+
 import { PromptInput } from "./prompt-input";
 
 const renderInput = () =>
   render(
     <PromptInput
+      entries={remoteCatalogue}
       isBusy={false}
+      model={keyOf(remoteCatalogue[0])}
+      onChangeModel={() => 0}
       onStop={() => 0}
       onSubmit={() => 0}
       placeholder="Ask about your receipts…"

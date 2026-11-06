@@ -12,14 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { InputGroupButton } from "@/components/ui/input-group";
-
-export interface CatalogueEntry {
-  provider: string;
-  model: string;
-  label: string;
-}
-
-const keyOf = (entry: CatalogueEntry) => `${entry.provider}:${entry.model}`;
+import { keyOf, labelOf } from "@/lib/chat/catalogue";
+import type { CatalogueEntry } from "@/lib/chat/catalogue";
 
 const PROVIDER_LABELS: Record<string, string> = {
   local: "Local",
@@ -54,12 +48,15 @@ export const ModelPicker = ({
         render={
           <InputGroupButton
             aria-label="Choose a model"
+            className="min-w-0"
             size="sm"
             variant="ghost"
           />
         }
       >
-        {selected?.label ?? "No model"}
+        <span className="truncate">
+          {selected ? labelOf(selected) : "No model"}
+        </span>
         <ChevronDownIcon data-icon="inline-end" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-56">
@@ -85,7 +82,7 @@ export const ModelPicker = ({
                       key={keyOf(entry)}
                       value={keyOf(entry)}
                     >
-                      {entry.label}
+                      {labelOf(entry)}
                     </DropdownMenuRadioItem>
                   ))}
               </DropdownMenuGroup>
@@ -98,7 +95,7 @@ export const ModelPicker = ({
                   key={keyOf(entry)}
                   value={keyOf(entry)}
                 >
-                  {entry.label}
+                  {labelOf(entry)}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuGroup>

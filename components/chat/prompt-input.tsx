@@ -9,6 +9,9 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@/components/ui/input-group";
+import type { CatalogueEntry } from "@/lib/chat/catalogue";
+
+import { ModelPicker } from "./model-picker";
 
 const PromptInputSubmit = ({
   canSend,
@@ -52,12 +55,20 @@ const PromptInputSubmit = ({
 };
 
 export const PromptInput = ({
+  entries,
   isBusy,
+  model,
+  onChangeModel,
   onStop,
   onSubmit,
   placeholder,
 }: {
+  /** Every model this deployment resolves, cheapest first. */
+  entries: CatalogueEntry[];
   isBusy: boolean;
+  /** The radio group's key for the selected entry — `provider/model`. */
+  model: string;
+  onChangeModel: (next: string) => void;
   onStop: () => void;
   onSubmit: (text: string) => void;
   placeholder: string;
@@ -119,6 +130,11 @@ export const PromptInput = ({
           value={input}
         />
         <InputGroupAddon align="block-end">
+          <ModelPicker
+            entries={entries}
+            onChange={onChangeModel}
+            value={model}
+          />
           <PromptInputSubmit
             canSend={canSend}
             isBusy={isBusy}
