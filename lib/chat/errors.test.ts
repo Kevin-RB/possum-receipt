@@ -66,10 +66,14 @@ const statusCases: [number, string][] = [
   [408, "busy"],
   [409, "busy"],
   [429, "busy"],
+  // 500/502/503/504 are the 5xx the ADR names; 501 and 599 are not, so they
+  // pin "every 5xx" rather than a list of four.
   [500, "busy"],
+  [501, "busy"],
   [502, "busy"],
   [503, "busy"],
   [504, "busy"],
+  [599, "busy"],
   [401, "modelUnavailable"],
   [402, "modelUnavailable"],
   [403, "modelUnavailable"],
