@@ -11,6 +11,8 @@
  * the cause with `reportError`. See ADR-0014.
  */
 export const USER_ERROR = {
+  /** A provider that is rate limited or briefly down: waiting is an instruction. */
+  busy: "The assistant is busy right now. Please try again in a moment.",
   deleteFailed: "Failed to delete receipt",
   /** Nothing more specific is known, or the cause is not ours to describe. */
   generic: "Something went wrong. Please try again.",
