@@ -89,22 +89,22 @@ const findPendingQuestion = (
     : undefined;
 
 export const Chat = ({
-  choices,
   firstName,
+  selections,
 }: {
+  firstName: string;
   /**
    * The catalogue's resolved entries, in its own order. The page reads them on
    * the server, so the browser holds no model id of its own and cannot offer
    * one the route would refuse.
    */
-  choices: readonly ChatSelection[];
-  firstName: string;
+  selections: readonly ChatSelection[];
 }) => {
   // Per conversation and client-side only: a switch applies to the next
   // message and the whole thread goes to the new model, nothing is stored, and
-  // a reload starts on the default — which is the catalogue's first entry, the
-  // same one the route resolves when a request names nothing.
-  const [selection, setSelection] = useState<ChatSelection>(choices[0]);
+  // a new conversation — a reload or "New chat" — starts on the default, which
+  // is the catalogue's first entry, the same one the route falls back to.
+  const [selection, setSelection] = useState<ChatSelection>(selections[0]);
 
   const {
     addToolOutput,
@@ -198,13 +198,13 @@ export const Chat = ({
               </EmptyHeader>
               <EmptyContent className="w-full max-w-3xl">
                 <PromptInput
-                  choices={choices}
                   isBusy={busy}
                   model={selection}
                   onChangeModel={setSelection}
                   onStop={stop}
                   onSubmit={(text) => sendMessage({ text })}
                   placeholder="How can I help you today?"
+                  selections={selections}
                 />
                 <Suggestions onSelect={(text) => sendMessage({ text })} />
               </EmptyContent>
@@ -283,18 +283,21 @@ export const Chat = ({
               </p>
             ) : null}
             <PromptInput
-              choices={choices}
               isBusy={busy}
               model={selection}
               onChangeModel={setSelection}
               onStop={stop}
               onSubmit={(text) => sendMessage({ text })}
               placeholder="Ask about your receipts…"
+              selections={selections}
             />
             {busy ? null : (
               <Button
                 className="self-start"
-                onClick={() => setMessages([])}
+                onClick={() => {
+                  setMessages([]);
+                  setSelection(selections[0]);
+                }}
                 size="sm"
                 type="button"
                 variant="ghost"

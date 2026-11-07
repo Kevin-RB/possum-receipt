@@ -55,16 +55,14 @@ const PromptInputSubmit = ({
 };
 
 export const PromptInput = ({
-  choices,
   isBusy,
   model,
   onChangeModel,
   onStop,
   onSubmit,
   placeholder,
+  selections,
 }: {
-  /** Every model this deployment resolves, in catalogue order. */
-  choices: readonly ChatSelection[];
   isBusy: boolean;
   /** The catalogue entry the next message will be sent to. */
   model: ChatSelection;
@@ -72,6 +70,8 @@ export const PromptInput = ({
   onStop: () => void;
   onSubmit: (text: string) => void;
   placeholder: string;
+  /** Every model this deployment resolves, in catalogue order. */
+  selections: readonly ChatSelection[];
 }) => {
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -131,8 +131,8 @@ export const PromptInput = ({
         />
         <InputGroupAddon align="block-end">
           <ModelPicker
-            choices={choices}
             onChange={onChangeModel}
+            selections={selections}
             value={model}
           />
           <PromptInputSubmit

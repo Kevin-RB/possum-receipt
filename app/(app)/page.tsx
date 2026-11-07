@@ -1,6 +1,6 @@
 import { Chat } from "@/components/chat/chat";
 import { requireSession } from "@/lib/auth/dal";
-import { chatChoices } from "@/lib/chat/catalogue";
+import { chatSelections } from "@/lib/chat/catalogue";
 import { toDisplayName } from "@/lib/chat/greeting";
 
 const Home = async () => {
@@ -13,8 +13,8 @@ const Home = async () => {
           resolved in the browser, from the user's own clock — see
           `lib/chat/greeting.ts`. */}
       <Chat
-        choices={chatChoices()}
         firstName={toDisplayName(session.user.name)}
+        selections={chatSelections()}
       />
     </main>
   );

@@ -93,10 +93,10 @@ describe("chat catalogue", () => {
     // refuse, and its first row is the default.
     const catalogue = await load("sk-test");
 
-    expect(catalogue.chatChoices()).toStrictEqual(
+    expect(catalogue.chatSelections()).toStrictEqual(
       REMOTE_MODELS.map((model) => ({ model, provider: "openrouter" }))
     );
-    expect(catalogue.chatChoices()[0]).toStrictEqual(
+    expect(catalogue.chatSelections()[0]).toStrictEqual(
       catalogue.resolveChatModel()?.selection
     );
   });
@@ -104,7 +104,7 @@ describe("chat catalogue", () => {
   it("offers only local when no remote key resolves", async () => {
     const catalogue = await load("");
 
-    expect(catalogue.chatChoices()).toStrictEqual([
+    expect(catalogue.chatSelections()).toStrictEqual([
       { model: LOCAL_MODEL, provider: "local" },
     ]);
   });

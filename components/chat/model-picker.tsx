@@ -33,22 +33,22 @@ const radioItems = (selections: readonly ChatSelection[]) =>
   ));
 
 export const ModelPicker = ({
-  choices,
   onChange,
+  selections,
   value,
 }: {
-  /** Every model this deployment resolves, in catalogue order. */
-  choices: readonly ChatSelection[];
   onChange: (next: ChatSelection) => void;
+  /** Every model this deployment resolves, in catalogue order. */
+  selections: readonly ChatSelection[];
   value: ChatSelection;
 }) => {
-  const groups = modelGroups(choices);
+  const groups = modelGroups(selections);
   // Two providers mean the row alone is ambiguous and needs its heading; one
   // means the heading would repeat the only provider on every line.
   const grouped = groups.length > 1;
 
   const select = (key: string) => {
-    const next = choices.find((choice) => selectionKey(choice) === key);
+    const next = selections.find((choice) => selectionKey(choice) === key);
     if (next) {
       onChange(next);
     }
@@ -59,7 +59,7 @@ export const ModelPicker = ({
       <DropdownMenuTrigger
         render={
           <InputGroupButton
-            aria-label="Choose a model"
+            aria-label={`Choose a model: ${modelLabel(value)}`}
             // `Button` is `shrink-0`, so `min-w-0` alone never truncates: the
             // label would grow the row until the send button was pushed out.
             // Allowing the trigger to shrink is what makes `truncate` on the
@@ -90,7 +90,7 @@ export const ModelPicker = ({
               </DropdownMenuGroup>
             ))
           ) : (
-            <DropdownMenuGroup>{radioItems(choices)}</DropdownMenuGroup>
+            <DropdownMenuGroup>{radioItems(selections)}</DropdownMenuGroup>
           )}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>

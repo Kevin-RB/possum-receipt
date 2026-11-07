@@ -122,11 +122,11 @@ const availableChatModels = (): ChatCatalogueEntry[] =>
  * same order, so the client cannot present an entry the route would refuse.
  * Plain data — `provider` and `model` cross to the browser, the price does not.
  */
-export const chatChoices = (): ChatSelection[] =>
+export const chatSelections = (): ChatSelection[] =>
   availableChatModels().map(({ model, provider }) => ({ model, provider }));
 
 const defaultChatSelection = (): ChatSelection | null =>
-  chatChoices()[0] ?? null;
+  chatSelections()[0] ?? null;
 
 export interface ResolvedChatModel {
   /** `provider/model`, safe for logs and eval output: it carries no credential. */

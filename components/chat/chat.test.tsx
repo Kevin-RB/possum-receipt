@@ -88,7 +88,7 @@ const send = async () => {
 };
 
 const pickLocal = async () => {
-  fireEvent.mouseDown(screen.getByLabelText("Choose a model"));
+  fireEvent.mouseDown(screen.getByLabelText(/^Choose a model/u));
 
   await waitFor(() => {
     expect(screen.getByRole("menu")).toBeTruthy();
@@ -97,7 +97,7 @@ const pickLocal = async () => {
 };
 
 const renderChat = () =>
-  render(<Chat choices={[deepseek, local]} firstName="Kevin" />);
+  render(<Chat firstName="Kevin" selections={[deepseek, local]} />);
 
 describe(Chat, () => {
   beforeEach(() => {
@@ -120,9 +120,9 @@ describe(Chat, () => {
   it("starts on the catalogue's first entry and sends it with the message", async () => {
     renderChat();
 
-    expect(screen.getByLabelText("Choose a model").textContent).toBe(
-      "deepseek-v4.1-flash"
-    );
+    expect(
+      screen.getByLabelText("Choose a model: deepseek-v4.1-flash")
+    ).toBeTruthy();
     await expect(send()).resolves.toMatchObject({
       messages: [
         {
@@ -135,15 +135,17 @@ describe(Chat, () => {
     });
   });
 
-  it("sends the new model after a mid-thread switch, keeping the thread", async () => {
+  it("sends the new model with the next message after a mid-thread switch", async () => {
     renderChat();
 
     await pickLocal();
 
-    expect(screen.getByLabelText("Choose a model").textContent).toBe(
-      "local (gemma-4-e4b)"
-    );
-    // The whole thread goes to the new model; nothing is filtered out or reset.
+    expect(
+      screen.getByLabelText("Choose a model: local (gemma-4-e4b)")
+    ).toBeTruthy();
+    // Nothing is filtered or reset: the same messages leave, under the new
+    // model. The whole prior thread riding along is visible in the browser run
+    // behind #225, which this stubbed hook cannot reproduce.
     await expect(send()).resolves.toMatchObject({
       messages: [
         {
@@ -170,24 +172,46 @@ describe(Chat, () => {
     // The conversation branch, not the empty state: the model choice survives
     // the first message.
     expect(screen.getByText("New chat")).toBeTruthy();
-    expect(screen.getByLabelText("Choose a model").textContent).toBe(
-      "deepseek-v4.1-flash"
-    );
+    expect(
+      screen.getByLabelText("Choose a model: deepseek-v4.1-flash")
+    ).toBeTruthy();
+  });
+
+  it("starts a new chat on the default, so the choice belongs to the conversation", async () => {
+    hooks.messages = [
+      {
+        id: "m1",
+        parts: [{ text: "how much this month?", type: "text" }],
+        role: "user",
+      },
+    ];
+
+    renderChat();
+    await pickLocal();
+    expect(
+      screen.getByLabelText("Choose a model: local (gemma-4-e4b)")
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByText("New chat"));
+
+    expect(
+      screen.getByLabelText("Choose a model: deepseek-v4.1-flash")
+    ).toBeTruthy();
   });
 
   it("starts a reload on the default, having stored nothing", async () => {
     const first = renderChat();
     await pickLocal();
-    expect(screen.getByLabelText("Choose a model").textContent).toBe(
-      "local (gemma-4-e4b)"
-    );
+    expect(
+      screen.getByLabelText("Choose a model: local (gemma-4-e4b)")
+    ).toBeTruthy();
     first.unmount();
 
     renderChat();
 
-    expect(screen.getByLabelText("Choose a model").textContent).toBe(
-      "deepseek-v4.1-flash"
-    );
+    expect(
+      screen.getByLabelText("Choose a model: deepseek-v4.1-flash")
+    ).toBeTruthy();
     expect(writes).toStrictEqual([]);
   });
 });

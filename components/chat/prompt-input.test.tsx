@@ -20,13 +20,13 @@ const local: ChatSelection = {
 const renderInput = () =>
   render(
     <PromptInput
-      choices={[remote, local]}
       isBusy={false}
       model={remote}
       onChangeModel={() => 0}
       onStop={() => 0}
       onSubmit={() => 0}
       placeholder="Ask about your receipts…"
+      selections={[remote, local]}
     />
   );
 
@@ -59,7 +59,7 @@ describe(PromptInput, () => {
     renderInput();
     const textarea = screen.getByPlaceholderText("Ask about your receipts…");
 
-    fireEvent.click(screen.getByLabelText("Choose a model"));
+    fireEvent.click(screen.getByLabelText(/^Choose a model/u));
 
     expect(document.activeElement).not.toBe(textarea);
   });
@@ -68,7 +68,9 @@ describe(PromptInput, () => {
     const { container } = renderInput();
     const footer = container.querySelector('[data-slot="input-group-addon"]');
 
-    expect(footer?.querySelector('[aria-label="Choose a model"]')).toBeTruthy();
+    expect(
+      footer?.querySelector('[aria-label^="Choose a model"]')
+    ).toBeTruthy();
     expect(footer?.textContent).toContain("deepseek-v4.1-flash");
   });
 });

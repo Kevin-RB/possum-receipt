@@ -17,20 +17,26 @@ const local: ChatSelection = {
   provider: "local",
 };
 
-const renderPicker = (choices: ChatSelection[], value: ChatSelection) => {
+const renderPicker = (selections: ChatSelection[], value: ChatSelection) => {
   const onChange = vi.fn<(next: ChatSelection) => void>();
 
-  render(<ModelPicker choices={choices} onChange={onChange} value={value} />);
+  render(
+    <ModelPicker onChange={onChange} selections={selections} value={value} />
+  );
 
   return onChange;
 };
+
+/** The label starts with `Choose a model` and names the current selection. */
+const trigger = (label: string) =>
+  screen.getByLabelText(`Choose a model: ${label}`);
 
 /**
  * The trigger opens on the press, in a frame Base UI schedules, so the menu is
  * awaited rather than asserted on synchronously.
  */
 const openMenu = async () => {
-  fireEvent.mouseDown(screen.getByLabelText("Choose a model"));
+  fireEvent.mouseDown(screen.getByLabelText(/^Choose a model/u));
 
   await waitFor(() => {
     expect(screen.getByRole("menu")).toBeTruthy();
@@ -41,7 +47,7 @@ describe(ModelPicker, () => {
   it("names the selected model without its vendor segment", () => {
     renderPicker([remote, local], remote);
 
-    expect(screen.getByLabelText("Choose a model").textContent).toBe(
+    expect(trigger("deepseek-v4.1-flash").textContent).toBe(
       "deepseek-v4.1-flash"
     );
   });

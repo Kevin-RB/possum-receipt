@@ -10,7 +10,12 @@ import type { ChatProviderId, ChatSelection } from "@/lib/chat/catalogue";
  * written by hand.
  */
 
-/** The id with its vendor segment dropped: `deepseek-v4.1-flash`. */
+/**
+ * The id's author segment dropped: `deepseek-v4.1-flash`. It is the model's
+ * author, not the provider — `local` serves `google/gemma-4-e4b` — and the
+ * provider is already either the only one in the list or the heading above the
+ * row, so repeating it on every line is noise.
+ */
 const modelName = (model: string): string => {
   const slash = model.indexOf("/");
 
@@ -18,16 +23,25 @@ const modelName = (model: string): string => {
 };
 
 /**
- * `deepseek-v4.1-flash`, not `deepseek/deepseek-v4.1-flash`: the provider is
- * either the only one in the list or the heading above the row, so repeating it
- * on every line is noise.
- *
- * `local` is the exception and keeps its wrapper: it is the one entry whose
- * request does not leave for a hosted provider, and the reader should be able
- * to see that without opening the menu.
+ * One record per provider, exhaustive on purpose: a provider added to the
+ * catalogue without a heading or a label rule is a build error, and its
+ * presentation lives in one place rather than in two switches.
  */
+const providerPresentation = {
+  local: {
+    heading: "Local",
+    // The one entry whose request does not leave for a hosted provider, so the
+    // label says so without opening the menu.
+    label: (name: string) => `local (${name})`,
+  },
+  openrouter: { heading: "OpenRouter", label: (name: string) => name },
+} satisfies Record<
+  ChatProviderId,
+  { heading: string; label: (name: string) => string }
+>;
+
 export const modelLabel = ({ model, provider }: ChatSelection): string =>
-  provider === "local" ? `local (${modelName(model)})` : modelName(model);
+  providerPresentation[provider].label(modelName(model));
 
 /**
  * The radio group needs one string per row; a model id alone would collide
@@ -36,15 +50,6 @@ export const modelLabel = ({ model, provider }: ChatSelection): string =>
  */
 export const selectionKey = ({ model, provider }: ChatSelection): string =>
   `${provider}/${model}`;
-
-/**
- * Exhaustive on purpose: a provider added to the catalogue without a heading is
- * a build error, not a row grouped under `undefined`.
- */
-const providerHeadings = {
-  local: "Local",
-  openrouter: "OpenRouter",
-} satisfies Record<ChatProviderId, string>;
 
 export interface ModelGroup {
   heading: string;
@@ -68,7 +73,7 @@ export const modelGroups = (
   }
 
   return [...groups].map(([provider, selections]) => ({
-    heading: providerHeadings[provider],
+    heading: providerPresentation[provider].heading,
     provider,
     selections,
   }));
