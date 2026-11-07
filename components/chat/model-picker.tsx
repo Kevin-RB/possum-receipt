@@ -15,12 +15,7 @@ import { InputGroupButton } from "@/components/ui/input-group";
 import type { ChatSelection } from "@/lib/chat/catalogue";
 import { modelGroups, modelLabel, selectionKey } from "@/lib/chat/model-labels";
 
-/**
- * The chat's model picker: one dropdown in the composer footer, drawing only
- * what the server resolved. It holds no list of its own and no default — the
- * page passes the catalogue's resolved entries and the caller owns the
- * selection, which is what keeps the route and the picker on the same list.
- */
+/** One radio row per selection; the value is the composed key, never shown. */
 const radioItems = (selections: readonly ChatSelection[]) =>
   selections.map((selection) => (
     <DropdownMenuRadioItem
@@ -32,6 +27,12 @@ const radioItems = (selections: readonly ChatSelection[]) =>
     </DropdownMenuRadioItem>
   ));
 
+/**
+ * The chat's model picker: one dropdown in the composer footer, drawing only
+ * what the server resolved. It holds no list of its own and no default — the
+ * page passes the catalogue's resolved entries and the caller owns the
+ * selection, which is what keeps the route and the picker on the same list.
+ */
 export const ModelPicker = ({
   onChange,
   selections,
