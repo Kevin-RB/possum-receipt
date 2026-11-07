@@ -190,7 +190,7 @@ Most values fall back to a working local default. The rows marked `—` have non
 | `ORC_MODEL` | `glm-ocr` | Vision model for transcription |
 | `PARSE_MODEL` | `google/gemma-4-e4b` | Model that turns a transcript into the contract |
 | `CATEGORIZE_MODEL` | `PARSE_MODEL` | Model for categorization |
-| `CHAT_MODEL` | `PARSE_MODEL` | Model for the chat agent |
+| `OPENROUTER_API_KEY` | — | App-owned credential for remote chat models. Unset means chat runs on the local model only |
 | `INNGEST_DEV` | — | Set to `1` to talk to the local dev server instead of Inngest Cloud. Required locally, or the SDK assumes Cloud and wants an event key |
 | `INNGEST_BASE_URL` | — | The local Inngest dev server, `http://localhost:8288`. Paired with `INNGEST_DEV=1` |
 | `SEED_DATABASE_URL` | `…/receipts_seed` | Target for `pnpm db:seed` |

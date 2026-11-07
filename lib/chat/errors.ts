@@ -84,6 +84,24 @@ export const chatErrorCode = (error: unknown): ChatErrorCode => {
 };
 
 /**
+ * A server route answers a refused request with `{ error }`, and the AI SDK's
+ * client turns that raw body into the thrown error's `message` (see
+ * `createUIApiCallError`). The body crossed a boundary the app does not own, so
+ * it is parsed and passed through `isUserMessage` like any other outside text:
+ * a JSON body, an HTML page or a provider message stays off the screen.
+ */
+const bodyMessage = (message: string): string | undefined => {
+  try {
+    const body = JSON.parse(message) as { error?: unknown };
+    return typeof body?.error === "string" && isUserMessage(body.error)
+      ? body.error
+      : undefined;
+  } catch {
+    // Not JSON: leave it to the status checks below.
+  }
+};
+
+/**
  * A turn can also fail before a stream exists — a 401 from an expired session,
  * a 500 from the framework, a dropped connection — and there the message is a
  * JSON body or an HTML page, not wording written for a reader. Only text this
@@ -93,6 +111,10 @@ export const chatErrorCode = (error: unknown): ChatErrorCode => {
 export const chatErrorText = (error: Error): string => {
   if (isUserMessage(error.message)) {
     return error.message;
+  }
+  const parsed = bodyMessage(error.message);
+  if (parsed) {
+    return parsed;
   }
   if (APICallError.isInstance(error) && error.statusCode === 401) {
     return USER_ERROR.unauthorized;

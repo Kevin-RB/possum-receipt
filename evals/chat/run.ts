@@ -3,9 +3,10 @@ import path from "node:path";
 
 import { eq } from "drizzle-orm";
 
-import { LM_STUDIO_URL, CHAT_MODEL } from "@/lib/ai/provider";
+import { LM_STUDIO_URL } from "@/lib/ai/provider";
 import type { ChatAgent } from "@/lib/chat/agent";
 import { createChatAgent } from "@/lib/chat/agent";
+import { resolveChatModel } from "@/lib/chat/catalogue";
 import { db } from "@/lib/db";
 import { FIXTURE_EMAIL } from "@/lib/db/fixture";
 import { user } from "@/lib/db/schema/auth";
@@ -250,18 +251,36 @@ const resolveOwnerId = async (): Promise<string> => {
 
 const main = async () => {
   const ownerId = await resolveOwnerId();
+  // The same registry the route resolves through, so a model that passed the
+  // evals is the model a reader would have run.
+  const resolved = resolveChatModel();
+
+  if (!resolved) {
+    throw new Error(
+      "The chat catalogue resolves no model. Set OPENROUTER_API_KEY or start LM Studio."
+    );
+  }
+
   // No viewer behind an eval run, so the agent gets the fallback zone — and with
   // it the day every named range the scenarios assert resolves against.
-  const agent = await createChatAgent(
+  const agent = await createChatAgent({
+    model: resolved.model,
     ownerId,
-    resolveToday(DEFAULT_TIMEZONE),
-    DEFAULT_TIMEZONE
-  );
+    timezone: DEFAULT_TIMEZONE,
+    today: resolveToday(DEFAULT_TIMEZONE),
+  });
 
   console.log(
     `Chat evals: ${scenarios.length} scenarios x ${RUNS_PER_SCENARIO} runs`
   );
-  console.log(`  model:  ${CHAT_MODEL} (${LM_STUDIO_URL})`);
+  // The endpoint that serves the resolved model, not always LM Studio: a
+  // remote run printed against the local URL would point debugging at the
+  // wrong server.
+  const endpoint =
+    resolved.selection.provider === "local"
+      ? LM_STUDIO_URL
+      : "https://openrouter.ai/api/v1";
+  console.log(`  model:  ${resolved.id} (${endpoint})`);
   console.log(`  owner:  ${FIXTURE_EMAIL}`);
   console.log("");
 
@@ -291,7 +310,7 @@ const main = async () => {
     `${JSON.stringify(
       {
         generatedAt: new Date().toISOString(),
-        model: CHAT_MODEL,
+        model: resolved.id,
         owner: FIXTURE_EMAIL,
         runsPerScenario: RUNS_PER_SCENARIO,
         scenarios: records,

@@ -14,5 +14,3 @@ export const ORC_MODEL = process.env.ORC_MODEL ?? "glm-ocr";
 export const PARSE_MODEL = process.env.PARSE_MODEL ?? "google/gemma-4-e4b";
 
 export const CATEGORIZE_MODEL = process.env.CATEGORIZE_MODEL ?? PARSE_MODEL;
-
-export const CHAT_MODEL = process.env.CHAT_MODEL ?? PARSE_MODEL;

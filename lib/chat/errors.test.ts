@@ -142,6 +142,23 @@ describe(chatErrorText, () => {
     );
   });
 
+  it("shows a catalogue refusal the route sent as a JSON body", () => {
+    // The route refuses an unknown catalogue selection with
+    // `{ error: USER_ERROR.modelNotAvailable }`, and the AI SDK's client puts
+    // that raw body on `error.message`. Without parsing it the reader saw the
+    // generic line, so the one sentence the refusal exists to say never landed.
+    expect(
+      chatErrorText(
+        new APICallError({
+          message: JSON.stringify({ error: USER_ERROR.modelNotAvailable }),
+          requestBodyValues: {},
+          statusCode: 400,
+          url: "http://localhost:3000/api/chat",
+        })
+      )
+    ).toBe(USER_ERROR.modelNotAvailable);
+  });
+
   it("replaces a response body with the generic line", () => {
     expect(chatErrorText(new Error('{"error":"Unauthorized"}'))).toBe(
       USER_ERROR.generic
