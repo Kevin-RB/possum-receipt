@@ -1,6 +1,6 @@
 import { ToolLoopAgent } from "ai";
+import type { LanguageModel } from "ai";
 
-import { CHAT_MODEL, lmstudio } from "@/lib/ai/provider";
 import { listCategoryOptions } from "@/lib/db";
 import { weekdayOf } from "@/lib/time";
 
@@ -72,16 +72,25 @@ Asking questions:
 - Only when the missing detail would not change any tool call — a mere phrasing ambiguity, two words for the same thing — pick the most likely reading, say so in one clause, and answer anyway.`;
 };
 
-export const createChatAgent = async (
-  ownerId: string,
-  today: Temporal.PlainDate,
-  timezone: string
-) => {
+export interface ChatAgentOptions {
+  /** Resolved through the catalogue by the caller, so route and evals agree. */
+  model: LanguageModel;
+  ownerId: string;
+  today: Temporal.PlainDate;
+  timezone: string;
+}
+
+export const createChatAgent = async ({
+  model,
+  ownerId,
+  today,
+  timezone,
+}: ChatAgentOptions) => {
   const taxonomy = await listCategoryOptions();
 
   return new ToolLoopAgent({
     instructions: buildInstructions(taxonomy, today, timezone),
-    model: lmstudio.chatModel(CHAT_MODEL),
+    model,
     stopWhen: ({ steps }) => steps.length >= MAX_STEPS,
     tools: buildChatTools(ownerId, today),
   });

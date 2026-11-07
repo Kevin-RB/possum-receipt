@@ -67,7 +67,7 @@ The map is exhaustive on purpose: every provider status lands in exactly one row
 
 `reportError("chat", error)` is `console.error("[chat]", error)`, and an `APICallError` carries two things that must not outlive the request: `requestBodyValues` — the messages sent to the model, which here are the reader's questions and the receipt text they quote — and a `url` whose query string can hold a provider key. `console.error` prints both.
 
-`chatFailureLog(error, CHAT_MODEL)` in `lib/chat/errors.ts` builds what is recorded instead: the classified code, the model, the error name, the provider's endpoint **origin** (no path, no query string), the status code, and whether a retry could help. The error's own message is dropped with it, because a provider often echoes the request inside it.
+`chatFailureLog(error, resolved.id)` in `lib/chat/errors.ts` builds what is recorded instead: the classified code, the model, the error name, the provider's endpoint **origin** (no path, no query string), the status code, and whether a retry could help. The error's own message is dropped with it, because a provider often echoes the request inside it.
 
 `onError` also receives failures that are not provider failures — the AI SDK routes a tool's own error through it — so the rule cannot be "drop every message": a storage error's message is the diagnosis. The projection therefore keeps the message for errors the AI SDK did not raise, and drops it for the ones it did. `TypeValidationError` renders the value that failed into its message (`Type validation failed: Value: {"query":"yogurt"}`), which for a tool is its input — the model's arguments, which routinely quote the reader.
 

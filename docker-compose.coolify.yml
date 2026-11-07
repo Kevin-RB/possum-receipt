@@ -83,7 +83,9 @@ services:
       ORC_MODEL: ${ORC_MODEL:-glm-ocr}
       PARSE_MODEL: ${PARSE_MODEL:-google/gemma-4-e4b}
       CATEGORIZE_MODEL: ${CATEGORIZE_MODEL:-google/gemma-4-e4b}
-      CHAT_MODEL: ${CHAT_MODEL:-google/gemma-4-e4b}
+      # App-owned credential for the chat catalogue's remote provider. Unset
+      # means only `local` is registered, so chat falls back to LM Studio.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?}
     extra_hosts:
