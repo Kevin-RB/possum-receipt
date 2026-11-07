@@ -9,6 +9,9 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@/components/ui/input-group";
+import type { ChatSelection } from "@/lib/chat/catalogue";
+
+import { ModelPicker } from "./model-picker";
 
 const PromptInputSubmit = ({
   canSend,
@@ -52,12 +55,20 @@ const PromptInputSubmit = ({
 };
 
 export const PromptInput = ({
+  choices,
   isBusy,
+  model,
+  onChangeModel,
   onStop,
   onSubmit,
   placeholder,
 }: {
+  /** Every model this deployment resolves, in catalogue order. */
+  choices: readonly ChatSelection[];
   isBusy: boolean;
+  /** The catalogue entry the next message will be sent to. */
+  model: ChatSelection;
+  onChangeModel: (next: ChatSelection) => void;
   onStop: () => void;
   onSubmit: (text: string) => void;
   placeholder: string;
@@ -119,6 +130,11 @@ export const PromptInput = ({
           value={input}
         />
         <InputGroupAddon align="block-end">
+          <ModelPicker
+            choices={choices}
+            onChange={onChangeModel}
+            value={model}
+          />
           <PromptInputSubmit
             canSend={canSend}
             isBusy={isBusy}

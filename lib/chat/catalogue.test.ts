@@ -87,6 +87,28 @@ describe("chat catalogue", () => {
     });
   });
 
+  it("offers the picker the resolved entries, in catalogue order and nothing else", async () => {
+    // The page hands this list to the picker, so it is the same resolution the
+    // route validates against: the client never learns a model the route would
+    // refuse, and its first row is the default.
+    const catalogue = await load("sk-test");
+
+    expect(catalogue.chatChoices()).toStrictEqual(
+      REMOTE_MODELS.map((model) => ({ model, provider: "openrouter" }))
+    );
+    expect(catalogue.chatChoices()[0]).toStrictEqual(
+      catalogue.resolveChatModel()?.selection
+    );
+  });
+
+  it("offers only local when no remote key resolves", async () => {
+    const catalogue = await load("");
+
+    expect(catalogue.chatChoices()).toStrictEqual([
+      { model: LOCAL_MODEL, provider: "local" },
+    ]);
+  });
+
   it("refuses a selection whose provider has no credential", async () => {
     const catalogue = await load("");
 

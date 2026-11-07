@@ -117,11 +117,16 @@ export const chatProviders = registerProviders(process.env.OPENROUTER_API_KEY);
 const availableChatModels = (): ChatCatalogueEntry[] =>
   CHAT_CATALOGUE.filter((entry) => chatProviders[entry.provider] !== undefined);
 
-const defaultChatSelection = (): ChatSelection | null => {
-  const [entry] = availableChatModels();
+/**
+ * What the picker offers, and what the route accepts: the same list, in the
+ * same order, so the client cannot present an entry the route would refuse.
+ * Plain data — `provider` and `model` cross to the browser, the price does not.
+ */
+export const chatChoices = (): ChatSelection[] =>
+  availableChatModels().map(({ model, provider }) => ({ model, provider }));
 
-  return entry ? { model: entry.model, provider: entry.provider } : null;
-};
+const defaultChatSelection = (): ChatSelection | null =>
+  chatChoices()[0] ?? null;
 
 export interface ResolvedChatModel {
   /** `provider/model`, safe for logs and eval output: it carries no credential. */
