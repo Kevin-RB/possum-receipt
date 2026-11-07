@@ -56,7 +56,10 @@ export const CHAT_CATALOGUE: readonly ChatCatalogueEntry[] = [
     provider: "openrouter",
   },
   {
-    model: "gemma-4-e4b",
+    // The exact id LM Studio serves, vendor prefix included. The picker, not
+    // this catalogue, shortens the label to `local (gemma-4-e4b)`; reading
+    // `PARSE_MODEL` or dropping the vendor here makes local chat 404.
+    model: "google/gemma-4-e4b",
     price: null,
     provider: "local",
   },

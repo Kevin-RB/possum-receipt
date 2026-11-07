@@ -22,7 +22,7 @@ const REMOTE_MODELS = [
   "google/gemini-3.5-flash-lite",
 ];
 
-const LOCAL_MODEL = "gemma-4-e4b";
+const LOCAL_MODEL = "google/gemma-4-e4b";
 
 const openRouterSettings = (model: unknown) =>
   (model as { settings?: { provider?: Record<string, unknown> } }).settings
@@ -68,7 +68,7 @@ describe("chat catalogue", () => {
 
     expect(Object.keys(catalogue.chatProviders)).toStrictEqual(["local"]);
     expect(catalogue.resolveChatModel()).toMatchObject({
-      id: "local/gemma-4-e4b",
+      id: "local/google/gemma-4-e4b",
       selection: { model: LOCAL_MODEL, provider: "local" },
     });
   });
