@@ -1,4 +1,9 @@
-import { APICallError, RetryError, TypeValidationError } from "ai";
+import {
+  APICallError,
+  RetryError,
+  StreamProviderError,
+  TypeValidationError,
+} from "ai";
 import { DrizzleQueryError } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
@@ -53,6 +58,79 @@ describe(chatErrorCode, () => {
   });
 });
 
+/**
+ * ADR-0014's map, walked row by row: every provider status lands in exactly one
+ * bucket, so a new status cannot quietly inherit the wrong sentence.
+ */
+const statusCases: [number, string][] = [
+  [408, "busy"],
+  [409, "busy"],
+  [429, "busy"],
+  [500, "busy"],
+  [502, "busy"],
+  [503, "busy"],
+  [504, "busy"],
+  [401, "modelUnavailable"],
+  [402, "modelUnavailable"],
+  [403, "modelUnavailable"],
+  [404, "modelUnavailable"],
+  [200, "modelUnavailable"],
+  [400, "generic"],
+  [418, "generic"],
+  [422, "generic"],
+];
+
+const withStatus = (statusCode: number) =>
+  new APICallError({
+    isRetryable: statusCode === 429,
+    message: `provider said ${statusCode}`,
+    requestBodyValues: {},
+    statusCode,
+    url: "https://openrouter.ai/api/v1/chat/completions",
+  });
+
+describe("chatErrorCode — the status map", () => {
+  it.each(statusCases)("classifies %i as %s", (statusCode, expected) => {
+    expect(chatErrorCode(withStatus(statusCode))).toBe(expected);
+  });
+
+  it("classifies a failure raised inside the stream by its own status", () => {
+    expect(
+      chatErrorCode(
+        new StreamProviderError({
+          message: "rate limited mid-stream",
+          statusCode: 429,
+        })
+      )
+    ).toBe("busy");
+
+    expect(
+      chatErrorCode(
+        new StreamProviderError({
+          message: "credits exhausted mid-stream",
+          statusCode: 402,
+        })
+      )
+    ).toBe("modelUnavailable");
+  });
+
+  it("sees a stream failure through the retry wrapper too", () => {
+    expect(
+      chatErrorCode(
+        retriesExhausted(
+          new StreamProviderError({ message: "down", statusCode: 503 })
+        )
+      )
+    ).toBe("busy");
+  });
+
+  it("treats a stream failure with no status as unavailable", () => {
+    expect(
+      chatErrorCode(new StreamProviderError({ message: "no status" }))
+    ).toBe("modelUnavailable");
+  });
+});
+
 describe(chatErrorText, () => {
   it("shows the wording the route wrote", () => {
     expect(chatErrorText(new Error(USER_ERROR.modelUnavailable))).toBe(
@@ -86,11 +164,30 @@ describe(chatErrorText, () => {
 describe(chatFailureLog, () => {
   it("keeps what makes a failure actionable", () => {
     expect(chatFailureLog(providerError(), "gemma")).toMatchObject({
-      code: "modelUnavailable",
+      code: "busy",
       isRetryable: true,
       model: "gemma",
       origin: "http://127.0.0.1:1234",
       statusCode: 429,
+    });
+  });
+
+  it("records a stream failure's status and retryability", () => {
+    expect(
+      chatFailureLog(
+        new StreamProviderError({
+          isRetryable: true,
+          message: "out of credits",
+          statusCode: 402,
+        }),
+        "gemma"
+      )
+    ).toStrictEqual({
+      code: "modelUnavailable",
+      isRetryable: true,
+      model: "gemma",
+      name: "AI_StreamProviderError",
+      statusCode: 402,
     });
   });
 

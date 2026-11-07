@@ -1,9 +1,9 @@
-import { AISDKError, APICallError, RetryError } from "ai";
+import { AISDKError, APICallError, RetryError, StreamProviderError } from "ai";
 import { DrizzleQueryError } from "drizzle-orm";
 
 import { isUserMessage, USER_ERROR } from "@/lib/errors";
 
-type ChatErrorCode = "generic" | "modelUnavailable";
+type ChatErrorCode = "busy" | "generic" | "modelUnavailable";
 
 /**
  * `maxRetries` (2 by default) reports the last failure inside a `RetryError`,
@@ -15,15 +15,73 @@ const unwrapRetries = (error: unknown): unknown =>
   RetryError.isInstance(error) ? unwrapRetries(error.lastError) : error;
 
 /**
- * Every failed provider call — connection refused, a model the server does not
- * serve, a 5xx — means one thing to the person waiting: the assistant could
- * not answer. Those distinctions stay in the server log, where they are
- * actionable, rather than in the chat.
+ * A provider failure is the AI SDK's own error type. Two shapes reach the
+ * route: `APICallError` before a stream exists, and `StreamProviderError` once
+ * one does, where the status rides on the payload rather than the wire. Both
+ * are classified the same way, so a second remote provider adds no classifier.
  */
-export const chatErrorCode = (error: unknown): ChatErrorCode =>
-  APICallError.isInstance(unwrapRetries(error))
-    ? "modelUnavailable"
-    : "generic";
+const providerStatus = (
+  error: unknown
+): { found: true; statusCode: number | undefined } | { found: false } => {
+  if (APICallError.isInstance(error)) {
+    return { found: true, statusCode: error.statusCode };
+  }
+  if (StreamProviderError.isInstance(error)) {
+    return { found: true, statusCode: error.statusCode };
+  }
+  return { found: false };
+};
+
+/**
+ * ADR-0014's status map, exhaustive on purpose: every provider status lands in
+ * exactly one row, so there is none left to judge at a call site.
+ *
+ * `busy` is the only code a reader can act on, and it is one sentence because
+ * waiting is the instruction. A dead key, an unknown model id and an exhausted
+ * balance are the operator's problem delivered to whoever is looking at the
+ * screen, so they share the outage line and are told apart in the log alone.
+ *
+ * 409 and the remaining 5xx sit in `busy` because the SDK has already retried
+ * them twice and the reader's next action is the same as for a 429.
+ */
+const codeForStatus = (statusCode: number | undefined): ChatErrorCode => {
+  if (statusCode === undefined) {
+    // A provider failure with no status: the connection never completed, or the
+    // provider reported an error without one.
+    return "modelUnavailable";
+  }
+  if (statusCode === 200) {
+    // A two-hundred carrying an error is a failure, not a success.
+    return "modelUnavailable";
+  }
+  if (statusCode === 408 || statusCode === 409 || statusCode === 429) {
+    return "busy";
+  }
+  if (statusCode >= 500) {
+    return "busy";
+  }
+  if (
+    statusCode === 401 ||
+    statusCode === 402 ||
+    statusCode === 403 ||
+    statusCode === 404
+  ) {
+    return "modelUnavailable";
+  }
+  return "generic";
+};
+
+/**
+ * Every failed provider call — a rate limit, a dead key, an exhausted balance,
+ * a model the server does not serve — means one of three things to the person
+ * waiting. The distinctions that do not change what they should do stay in the
+ * server log, where they are actionable.
+ */
+export const chatErrorCode = (error: unknown): ChatErrorCode => {
+  const failure = providerStatus(unwrapRetries(error));
+
+  return failure.found ? codeForStatus(failure.statusCode) : "generic";
+};
 
 /**
  * A turn can also fail before a stream exists — a 401 from an expired session,
@@ -136,6 +194,18 @@ export const chatFailureLog = (
       isRetryable: cause.isRetryable,
       origin: originOf(cause.url),
       statusCode: cause.statusCode,
+    };
+  }
+
+  // A failure inside a stream carries its status on the payload instead of the
+  // wire, and has no URL to report.
+  if (StreamProviderError.isInstance(cause)) {
+    return {
+      ...base,
+      isRetryable: cause.isRetryable,
+      ...(cause.statusCode === undefined
+        ? {}
+        : { statusCode: cause.statusCode }),
     };
   }
 
