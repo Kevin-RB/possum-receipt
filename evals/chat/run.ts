@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 
 import { LM_STUDIO_URL } from "@/lib/ai/provider";
 import type { ChatAgent } from "@/lib/chat/agent";
-import { createChatAgent } from "@/lib/chat/agent";
+import { createChatAgent, MAX_STEPS } from "@/lib/chat/agent";
 import { resolveChatModel } from "@/lib/chat/catalogue";
 import { db } from "@/lib/db";
 import { FIXTURE_EMAIL } from "@/lib/db/fixture";
@@ -19,13 +19,20 @@ import type {
   Scenario,
   ToolCall,
 } from "./scenarios";
-import { describeToolCalls, scenarios } from "./scenarios";
+import { describeToolCalls, expectNoRunaway, scenarios } from "./scenarios";
 
 /**
  * Real-model chat evals. Unlike `pnpm test`, this needs Postgres (for the
- * fixture owner) and LM Studio, so it is never part of CI. Each scenario runs
- * several times because the local model is flaky: the output is a pass rate,
- * not a single verdict.
+ * fixture owner) and a model — LM Studio, or OpenRouter through the catalogue —
+ * so it is never part of CI. Each scenario runs several times because a model
+ * is flaky: the output is a pass rate, not a single verdict.
+ *
+ * The pass rate is **correctness**: the lookups the question needed, with the
+ * arguments that make them right, and an answer that matches what they
+ * returned. Steps and latency are printed beside it as the cost of getting
+ * there — a model that double-checks takes more of both and is still correct.
+ * The one efficiency failure is a run that reaches the agent's step ceiling,
+ * since that is a loop rather than an extra lookup.
  */
 
 /** Runs per scenario. Enough to see flakiness, small enough to finish quickly. */
@@ -62,6 +69,15 @@ interface ScenarioRecord {
 const runPassed = (run: RunRecord): boolean =>
   run.checks.every((check) => check.ok);
 
+/**
+ * The checks a run is scored on: the scenario's own, plus the runaway guard
+ * every scenario shares, so no definition can forget it.
+ */
+const checksFor = (scenario: Scenario): Check[] => [
+  ...scenario.checks,
+  expectNoRunaway(MAX_STEPS),
+];
+
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
@@ -93,7 +109,7 @@ const runOnce = async (
 
     return {
       answer: observation.answer,
-      checks: scenario.checks.map((check) => ({
+      checks: checksFor(scenario).map((check) => ({
         ...check.run(observation),
         expected: check.expected,
         kind: check.kind,
@@ -107,7 +123,7 @@ const runOnce = async (
   } catch (error) {
     return {
       answer: "",
-      checks: scenario.checks.map((check) => ({
+      checks: checksFor(scenario).map((check) => ({
         actual: `error: ${errorMessage(error)}`,
         expected: check.expected,
         kind: check.kind,
@@ -136,7 +152,7 @@ const runScenario = async (
   const passed = runs.filter((run) => runPassed(run)).length;
 
   return {
-    checks: scenario.checks.map((check) => ({
+    checks: checksFor(scenario).map((check) => ({
       expected: check.expected,
       kind: check.kind,
     })),
@@ -194,6 +210,8 @@ const printReport = (records: ScenarioRecord[]) => {
     )}ms`,
   ]);
 
+  // Read this as: pass is "the reader got a right answer", steps and latency
+  // are what it cost. They are deliberately separate columns, not one score.
   printTable(
     ["scenario", "pass", "expected", "actual tools", "steps", "latency"],
     rows

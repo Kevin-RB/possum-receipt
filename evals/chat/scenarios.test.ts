@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { Observation } from "./scenarios";
 import {
+  expectAnswerAgreesWithCount,
   expectAnswerNamesNewestDate,
   expectNoClaim,
+  expectNoMismatchedAmounts,
+  expectNoRunaway,
+  expectNoTools,
   expectTools,
 } from "./scenarios";
 
@@ -54,13 +58,52 @@ describe(expectTools, () => {
     ).toBeFalsy();
   });
 
-  it("fails an extra tool call rather than ignoring it", () => {
+  it("allows a second read-only lookup after the expected one", () => {
+    // The case that used to fail a correct answer: an empty search for
+    // "cheese", then the same tool again for a synonym. The model answered the
+    // question; the extra call is a cost, and the step count reports it.
+    expect(
+      expectTools([
+        { input: { query: "cheese" }, name: "search_line_items" },
+      ]).run(
+        observation({
+          tools: [
+            {
+              input: { query: "cheese" },
+              name: "search_line_items",
+              output: {},
+            },
+            {
+              input: { query: "cheddar" },
+              name: "search_line_items",
+              output: {},
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("still fails a lookup it did not need when the scenario forbids extras", () => {
+    expect(
+      expectTools([{ name: "ask_user" }], { allowExtra: [] }).run(
+        observation({
+          tools: [
+            { input: {}, name: "spend_by_category", output: {} },
+            { input: {}, name: "ask_user", output: {} },
+          ],
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("fails an extra ask_user, because asking is not a lookup", () => {
     expect(
       expectTools([{ name: "search_line_items" }]).run(
         observation({
           tools: [
             { input: {}, name: "search_line_items", output: {} },
-            { input: {}, name: "receipt_detail", output: {} },
+            { input: {}, name: "ask_user", output: {} },
           ],
         })
       ).ok
@@ -77,6 +120,192 @@ describe(expectTools, () => {
             { input: {}, name: "spend_by_merchant", output: {} },
             { input: {}, name: "list_receipts", output: {} },
           ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+});
+
+describe("no tools expected", () => {
+  it("fails any lookup, because the prompt asked for none", () => {
+    expect(
+      expectNoTools.run(
+        observation({
+          tools: [{ input: {}, name: "search_line_items", output: {} }],
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("passes a run that answered without one", () => {
+    expect(expectNoTools.run(observation()).ok).toBeTruthy();
+  });
+});
+
+describe(expectNoRunaway, () => {
+  const check = expectNoRunaway(8);
+
+  it("passes a run that took a few steps", () => {
+    expect(check.run(observation({ steps: 3 })).ok).toBeTruthy();
+  });
+
+  it("fails a run that reached the agent's ceiling, which is a loop", () => {
+    expect(check.run(observation({ steps: 8 })).ok).toBeFalsy();
+  });
+});
+
+describe("mismatched amounts", () => {
+  const check = expectNoMismatchedAmounts;
+  const totals = [
+    {
+      input: {},
+      name: "spend_by_category",
+      output: {
+        categories: [{ category: "Groceries", total: 49.67 }],
+        total: 49.67,
+      },
+    },
+  ];
+
+  it("passes when the answer quotes the total the tool returned", () => {
+    expect(
+      check.run(
+        observation({
+          answer: "You spent $49.67 on groceries last month.",
+          tools: totals,
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("passes when the answer quotes no figure, because the table carries it", () => {
+    expect(
+      check.run(
+        observation({
+          answer: "The figure above is the whole picture for the month.",
+          tools: totals,
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("fails an amount no tool returned", () => {
+    expect(
+      check.run(
+        observation({ answer: "You spent $52.10 on groceries.", tools: totals })
+      ).ok
+    ).toBeFalsy();
+  });
+});
+
+describe(expectAnswerAgreesWithCount, () => {
+  const check = expectAnswerAgreesWithCount("search_line_items");
+
+  it("passes when nothing came back and the answer says so", () => {
+    expect(
+      check.run(
+        observation({
+          answer: "I couldn't find any cheese purchases.",
+          tools: [
+            {
+              input: {},
+              name: "search_line_items",
+              output: { count: 0, items: [], total: 0 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("fails when nothing came back but the answer describes a purchase", () => {
+    expect(
+      check.run(
+        observation({
+          answer: "You last bought cheese on 2026-08-16.",
+          tools: [
+            {
+              input: {},
+              name: "search_line_items",
+              output: { count: 0, items: [], total: 0 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("passes when rows came back and the answer reports them", () => {
+    expect(
+      check.run(
+        observation({
+          answer:
+            "Yes — four yogurt purchases this year, most recently on 2026-09-12.",
+          tools: [
+            {
+              input: {},
+              name: "search_line_items",
+              output: {
+                count: 4,
+                items: [{ date: "2026-09-12" }],
+                total: 12.5,
+              },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("fails when rows came back but the answer says nothing was found", () => {
+    expect(
+      check.run(
+        observation({
+          answer: "I couldn't find any yogurt purchases.",
+          tools: [
+            {
+              input: {},
+              name: "search_line_items",
+              output: {
+                count: 4,
+                items: [{ date: "2026-09-12" }],
+                total: 12.5,
+              },
+            },
+          ],
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("accepts an absence mentioned in passing on a question that did find rows", () => {
+    expect(
+      check.run(
+        observation({
+          answer:
+            "Yes — four yogurt purchases this year, most recently 2026-09-12; none since then.",
+          tools: [
+            {
+              input: {},
+              name: "search_line_items",
+              output: {
+                count: 4,
+                items: [{ date: "2026-09-12" }],
+                total: 12.5,
+              },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("reads a list result that is a bare array", () => {
+    expect(
+      expectAnswerAgreesWithCount("list_receipts").run(
+        observation({
+          answer: "There are no Woolworths receipts from last year.",
+          tools: [{ input: {}, name: "list_receipts", output: [] }],
         })
       ).ok
     ).toBeTruthy();
