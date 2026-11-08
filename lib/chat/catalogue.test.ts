@@ -14,11 +14,7 @@ const load = (apiKey: string) => {
   return import("./catalogue");
 };
 
-const REMOTE_MODELS = [
-  "deepseek/deepseek-v4.1-flash-1017",
-  "z-ai/glm-5.3-flash",
-  "anthropic/claude-haiku-5.5",
-];
+const REMOTE_MODELS = ["deepseek/deepseek-v4.1-flash-1017"];
 
 const LOCAL_MODEL = "google/gemma-4-e4b";
 

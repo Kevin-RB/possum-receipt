@@ -4,7 +4,7 @@ Date: 2026-11-04 Revised: 2026-11-08
 
 ## Status
 
-Accepted. Revised 2026-11-05: the catalogue is OpenRouter-only; the native Google provider was dropped. Revised 2026-11-08: the list is three remote entries, and a dated revision is accepted where the undated alias lags it.
+Accepted. Revised 2026-11-05: the catalogue is OpenRouter-only; the native Google provider was dropped. Revised 2026-11-08: one remote entry, and a dated revision is accepted where the undated alias lags it.
 
 ## Context
 
@@ -55,7 +55,7 @@ The AI SDK already provides the adapter. `@openrouter/ai-sdk-provider` implement
 - The app-owned key must be a paid key. The free models are a 50-requests-per-day allowance per account, shared by every reader.
 - Ids and prices are a snapshot and must be re-read before the catalogue is written into code, then again before each promotion. Movement is real in both directions: `z-ai/glm-5.3-flash` went from $0.029/$0.092 to $0.15/$0.50 per 1M tokens in two days, and by 2026-11-08 had fallen to $0.0335/$0.083.
 - The 2026-11-08 default is cheaper but chattier: on an empty product search it may run a synonym search before answering. That is a cost, and `pnpm eval:chat` reports it as an extra step rather than folding it into the pass rate — a score that fell while every answer stayed right would be measuring the wrong thing. What the suite fails it on is real: a lookup with the wrong range, and an amount no tool returned (both observed while re-pricing, and both already answerable from the rendered table if they had not been stated).
-- The list is three remote entries as of 2026-11-08: `deepseek/deepseek-v4.1-flash-1017`, `z-ai/glm-5.3-flash` and `anthropic/claude-haiku-5.5`. `qwen/qwen3.8-27b` and `google/gemini-3.5-flash-lite` were dropped as the expensive tail — $1.875 and $2.50 per 1M output — which narrows the spread between the cheapest and dearest entry to about 4× per call rather than 6×.
+- **One remote model as of 2026-11-08**, plus `local` as the no-key fallback: `deepseek/deepseek-v4.1-flash-1017`. The price tail went first — `qwen/qwen3.8-27b` and `google/gemini-3.5-flash-lite` at $1.875 and $2.50 per 1M output — and the smaller open-weight models that survived it (`z-ai/glm-5.3-flash`, `openai/gpt-oss-20b`, `qwen/qwen3.6-35b-a3b`) were tried against `pnpm eval:chat` and lost on the failures a reader would notice: the wrong breakdown level, a tool name the app does not have, and asking for a period the reader had already given. A menu of near-equivalents is not worth a per-answer quality lottery, so the owner chose one model.
 
 ## Related
 

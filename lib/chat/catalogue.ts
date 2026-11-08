@@ -30,9 +30,9 @@ export type ChatProviderId = (typeof chatProviderIds)[number];
  * starts on `local` and one with a key starts on the cheapest remote model.
  *
  * Prices are a snapshot (2026-11-08) and are re-read before a promotion, as
- * ADR-0017 requires: the tail was dropped when it was re-checked, `glm-5.3-flash`
- * fell to a fraction of its 2026-11-05 price, and the undated deepseek alias
- * turned out to be pinned to an older revision than the one that is cheaper.
+ * ADR-0017 requires. The list is one remote model plus `local`: the price tail
+ * went first, and the models that survived it lost to this one on the eval
+ * suite — see the ADR for the numbers.
  */
 export const CHAT_CATALOGUE: readonly ChatCatalogueEntry[] = [
   {
@@ -41,17 +41,6 @@ export const CHAT_CATALOGUE: readonly ChatCatalogueEntry[] = [
     // at 8.5× this input price.
     model: "deepseek/deepseek-v4.1-flash-1017",
     price: { input: 0.006, output: 0.5 },
-    provider: "openrouter",
-  },
-  {
-    // Cheapest output in the list by a wide margin (0.083 vs 0.5+).
-    model: "z-ai/glm-5.3-flash",
-    price: { input: 0.0335, output: 0.083 },
-    provider: "openrouter",
-  },
-  {
-    model: "anthropic/claude-haiku-5.5",
-    price: { input: 0.1, output: 0.5 },
     provider: "openrouter",
   },
   {
