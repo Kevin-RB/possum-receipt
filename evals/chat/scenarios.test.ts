@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Observation } from "./scenarios";
 import {
-  expectAnswerAgreesWithCount,
+  expectAnswerAgreesWithRows,
   expectAnswerNamesNewestDate,
   expectNoClaim,
   expectNoMismatchedAmounts,
@@ -189,6 +189,28 @@ describe("mismatched amounts", () => {
     ).toBeTruthy();
   });
 
+  it("does not let a count stand in for an amount", () => {
+    // $12.00 must not pass because some lookup returned `count: 12`.
+    expect(
+      check.run(
+        observation({
+          answer: "You spent $12.00 on groceries.",
+          tools: [
+            {
+              input: {},
+              name: "spend_by_category",
+              output: {
+                categories: [{ category: "Groceries", total: 12.5 }],
+                count: 12,
+                total: 12.5,
+              },
+            },
+          ],
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
   it("fails an amount no tool returned", () => {
     expect(
       check.run(
@@ -198,8 +220,8 @@ describe("mismatched amounts", () => {
   });
 });
 
-describe(expectAnswerAgreesWithCount, () => {
-  const check = expectAnswerAgreesWithCount("search_line_items");
+describe(expectAnswerAgreesWithRows, () => {
+  const check = expectAnswerAgreesWithRows("search_line_items");
 
   it("passes when nothing came back and the answer says so", () => {
     expect(
@@ -340,7 +362,7 @@ describe(expectAnswerAgreesWithCount, () => {
 
   it("reads a list result that is a bare array", () => {
     expect(
-      expectAnswerAgreesWithCount("list_receipts").run(
+      expectAnswerAgreesWithRows("list_receipts").run(
         observation({
           answer: "There are no Woolworths receipts from last year.",
           tools: [{ input: {}, name: "list_receipts", output: [] }],

@@ -277,22 +277,36 @@ const claimsNotFound = (text: string): boolean =>
 const DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}\b/u;
 
 /**
- * Every number anywhere in a tool result. An answer may state a figure the
- * question needs — a total, a line total, a count — but it may only state one
- * that came back from a tool: the model inventing or mis-adding an amount is
- * the failure this eval exists to catch (a real trace claimed $372.66 for rows
- * summing to $373.16), while a summary that quotes nothing is fine, because the
- * number is on screen in the rendered table.
+ * The fields a tool result carries money in. A count or an id is a number too,
+ * and collecting those would let `$12.00` pass because some lookup returned
+ * `count: 12` — the invented-amount hole this check exists to close.
  */
-const numbersIn = (value: unknown): number[] => {
+const MONEY_FIELDS = new Set([
+  "gst",
+  "lineTotal",
+  "subtotal",
+  "total",
+  "unitPrice",
+]);
+
+/**
+ * Every amount a tool returned, and only those. An answer may state a figure
+ * the question needs, but only one the data produced: a model inventing or
+ * mis-adding an amount is the failure this eval exists to catch (a real trace
+ * claimed $372.66 for rows summing to $373.16). A summary that quotes nothing
+ * is fine — the number is on screen in the rendered table.
+ */
+const amountsReturned = (value: unknown, isMoney = false): number[] => {
   if (typeof value === "number") {
-    return Number.isFinite(value) ? [value] : [];
+    return isMoney && Number.isFinite(value) ? [value] : [];
   }
   if (Array.isArray(value)) {
-    return value.flatMap(numbersIn);
+    return value.flatMap((item) => amountsReturned(item, isMoney));
   }
   if (isRecord(value)) {
-    return Object.values(value).flatMap(numbersIn);
+    return Object.entries(value).flatMap(([key, child]) =>
+      amountsReturned(child, MONEY_FIELDS.has(key))
+    );
   }
   return [];
 };
@@ -312,7 +326,9 @@ export const expectNoMismatchedAmounts: Check = {
   expected: "no amount the tools did not return",
   kind: "answer",
   run: (observation) => {
-    const known = observation.tools.flatMap((tool) => numbersIn(tool.output));
+    const known = observation.tools.flatMap((tool) =>
+      amountsReturned(tool.output)
+    );
     const wrong = amountsIn(observation.answer).filter(
       (amount) => !known.some((value) => sameAmount(value, amount))
     );
@@ -359,10 +375,12 @@ const rowsOf = (output: unknown): unknown[] | null => {
  * "Did I buy …?" is answered yes or no, and the tool said which. This is the
  * assertion that the answer agrees with the data rather than merely looking
  * plausible: a model that searched, found nothing, and answered "none" passes;
- * one that searched, found nothing, and described a purchase does not.
+ * one that searched, found nothing, and described a purchase does not. When
+ * rows did come back it asserts the weaker, checkable half — that the answer
+ * does not deny them — rather than reading a count back out of prose.
  */
-export const expectAnswerAgreesWithCount = (toolName: string): Check => ({
-  expected: `answer agrees with the ${toolName} row count`,
+export const expectAnswerAgreesWithRows = (toolName: string): Check => ({
+  expected: `answer agrees with whether ${toolName} found rows`,
   kind: "answer",
   run: (observation) => {
     const call = observation.tools.findLast((tool) => tool.name === toolName);
@@ -521,7 +539,7 @@ export const scenarios: Scenario[] = [
   {
     checks: [
       expectTools([{ input: { query: "cheese" }, name: "search_line_items" }]),
-      expectAnswerAgreesWithCount("search_line_items"),
+      expectAnswerAgreesWithRows("search_line_items"),
     ],
     name: "find a product",
     prompt: "Find cheese",
@@ -547,7 +565,7 @@ export const scenarios: Scenario[] = [
           name: "search_line_items",
         },
       ]),
-      expectAnswerAgreesWithCount("search_line_items"),
+      expectAnswerAgreesWithRows("search_line_items"),
     ],
     name: "product history, period given",
     prompt: "Did I buy yogurt this year?",
@@ -559,7 +577,7 @@ export const scenarios: Scenario[] = [
     // as nearest is not asserted — only that it did not stop to ask.
     checks: [
       expectTools([{ input: { query: "peanuts" }, name: "search_line_items" }]),
-      expectAnswerAgreesWithCount("search_line_items"),
+      expectAnswerAgreesWithRows("search_line_items"),
     ],
     name: "product history, no match",
     prompt: "Did I buy peanuts in the last two weeks?",
