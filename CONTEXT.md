@@ -62,7 +62,7 @@ A local-first web app that turns photos of paper receipts into structured, persi
 
 **Provider**: A service the app calls to run a chat model, named in the catalogue by an id such as `openrouter` or `local`. The app owns the credential for every provider it offers; a reader never supplies one. _Avoid_: Vendor, backend, gateway.
 
-**Model**: A specific model id a provider serves, named in the catalogue (for example `deepseek/deepseek-v4.1-flash`, `z-ai/glm-5.3-flash`, or `google/gemma-4-e4b`). What the model picker selects and what the chat runs. _Avoid_: Engine, LLM, AI, checkpoint.
+**Model**: A specific model id a provider serves, named in the catalogue (for example `deepseek/deepseek-v4.1-flash-1017`, `z-ai/glm-5.3-flash`, or `google/gemma-4-e4b`). What the model picker selects and what the chat runs. _Avoid_: Engine, LLM, AI, checkpoint.
 
 **Catalogue**: The app-owned allowlist of providers and models the picker may offer, each with the capabilities it must support. A selection outside the catalogue is refused before any provider call. _Avoid_: Model list, model registry, config.
 

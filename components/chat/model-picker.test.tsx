@@ -8,7 +8,7 @@ import type { ChatSelection } from "@/lib/chat/catalogue";
 import { ModelPicker } from "./model-picker";
 
 const remote: ChatSelection = {
-  model: "deepseek/deepseek-v4.1-flash",
+  model: "deepseek/deepseek-v4.1-flash-1017",
   provider: "openrouter",
 };
 
@@ -44,11 +44,11 @@ const openMenu = async () => {
 };
 
 describe(ModelPicker, () => {
-  it("names the selected model without its vendor segment", () => {
+  it("names the selected model without its author segment", () => {
     renderPicker([remote, local], remote);
 
-    expect(trigger("deepseek-v4.1-flash").textContent).toBe(
-      "deepseek-v4.1-flash"
+    expect(trigger("deepseek-v4.1-flash-1017").textContent).toBe(
+      "deepseek-v4.1-flash-1017"
     );
   });
 

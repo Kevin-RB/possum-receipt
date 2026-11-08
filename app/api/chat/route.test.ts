@@ -110,10 +110,10 @@ const request = (body: Record<string, unknown>, accountZone?: string) => {
 };
 
 const defaultResolved: ResolvedChatModel = {
-  id: "openrouter/deepseek/deepseek-v4.1-flash",
+  id: "openrouter/deepseek/deepseek-v4.1-flash-1017",
   model: state.model,
   selection: {
-    model: "deepseek/deepseek-v4.1-flash",
+    model: "deepseek/deepseek-v4.1-flash-1017",
     provider: "openrouter",
   },
 };
@@ -227,12 +227,12 @@ describe("POST /api/chat resolves the catalogue selection", () => {
     // the body never does.
     const resolved = await post({
       baseURL: "http://internal.example/v1",
-      model: "deepseek/deepseek-v4.1-flash",
+      model: "deepseek/deepseek-v4.1-flash-1017",
       provider: "openrouter",
     });
 
     expect(resolveChatModel).toHaveBeenCalledWith({
-      model: "deepseek/deepseek-v4.1-flash",
+      model: "deepseek/deepseek-v4.1-flash-1017",
       provider: "openrouter",
     });
     expect(resolved.model).toBe(state.model);

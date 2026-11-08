@@ -37,7 +37,7 @@ vi.mock(import("@ai-sdk/react"), () => ({
 const { Chat } = await import("./chat");
 
 const deepseek: ChatSelection = {
-  model: "deepseek/deepseek-v4.1-flash",
+  model: "deepseek/deepseek-v4.1-flash-1017",
   provider: "openrouter",
 };
 
@@ -121,7 +121,7 @@ describe(Chat, () => {
     renderChat();
 
     expect(
-      screen.getByLabelText("Choose a model: deepseek-v4.1-flash")
+      screen.getByLabelText("Choose a model: deepseek-v4.1-flash-1017")
     ).toBeTruthy();
     await expect(send()).resolves.toMatchObject({
       messages: [
@@ -173,7 +173,7 @@ describe(Chat, () => {
     // the first message.
     expect(screen.getByText("New chat")).toBeTruthy();
     expect(
-      screen.getByLabelText("Choose a model: deepseek-v4.1-flash")
+      screen.getByLabelText("Choose a model: deepseek-v4.1-flash-1017")
     ).toBeTruthy();
   });
 
@@ -195,7 +195,7 @@ describe(Chat, () => {
     fireEvent.click(screen.getByText("New chat"));
 
     expect(
-      screen.getByLabelText("Choose a model: deepseek-v4.1-flash")
+      screen.getByLabelText("Choose a model: deepseek-v4.1-flash-1017")
     ).toBeTruthy();
   });
 
@@ -210,7 +210,7 @@ describe(Chat, () => {
     renderChat();
 
     expect(
-      screen.getByLabelText("Choose a model: deepseek-v4.1-flash")
+      screen.getByLabelText("Choose a model: deepseek-v4.1-flash-1017")
     ).toBeTruthy();
     expect(writes).toStrictEqual([]);
   });

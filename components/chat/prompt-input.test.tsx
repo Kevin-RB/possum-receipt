@@ -8,7 +8,7 @@ import type { ChatSelection } from "@/lib/chat/catalogue";
 import { PromptInput } from "./prompt-input";
 
 const remote: ChatSelection = {
-  model: "deepseek/deepseek-v4.1-flash",
+  model: "deepseek/deepseek-v4.1-flash-1017",
   provider: "openrouter",
 };
 
@@ -71,6 +71,6 @@ describe(PromptInput, () => {
     expect(
       footer?.querySelector('[aria-label^="Choose a model"]')
     ).toBeTruthy();
-    expect(footer?.textContent).toContain("deepseek-v4.1-flash");
+    expect(footer?.textContent).toContain("deepseek-v4.1-flash-1017");
   });
 });

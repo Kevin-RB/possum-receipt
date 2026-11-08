@@ -15,11 +15,9 @@ const load = (apiKey: string) => {
 };
 
 const REMOTE_MODELS = [
-  "deepseek/deepseek-v4.1-flash",
-  "anthropic/claude-haiku-5.5",
+  "deepseek/deepseek-v4.1-flash-1017",
   "z-ai/glm-5.3-flash",
-  "qwen/qwen3.8-27b",
-  "google/gemini-3.5-flash-lite",
+  "anthropic/claude-haiku-5.5",
 ];
 
 const LOCAL_MODEL = "google/gemma-4-e4b";
@@ -55,9 +53,9 @@ describe("chat catalogue", () => {
 
     expect(Object.keys(catalogue.chatProviders)).toStrictEqual(["openrouter"]);
     expect(catalogue.resolveChatModel()).toMatchObject({
-      id: "openrouter/deepseek/deepseek-v4.1-flash",
+      id: "openrouter/deepseek/deepseek-v4.1-flash-1017",
       selection: {
-        model: "deepseek/deepseek-v4.1-flash",
+        model: "deepseek/deepseek-v4.1-flash-1017",
         provider: "openrouter",
       },
     });
@@ -77,7 +75,7 @@ describe("chat catalogue", () => {
     const catalogue = await load("sk-test");
 
     const resolved = catalogue.resolveChatModel({
-      model: "deepseek/deepseek-v4.1-flash",
+      model: "deepseek/deepseek-v4.1-flash-1017",
       provider: "openrouter",
     });
 
@@ -114,7 +112,7 @@ describe("chat catalogue", () => {
 
     expect(
       catalogue.resolveChatModel({
-        model: "deepseek/deepseek-v4.1-flash",
+        model: "deepseek/deepseek-v4.1-flash-1017",
         provider: "openrouter",
       })
     ).toBeNull();

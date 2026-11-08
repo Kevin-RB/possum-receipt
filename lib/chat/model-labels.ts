@@ -11,7 +11,7 @@ import type { ChatProviderId, ChatSelection } from "@/lib/chat/catalogue";
  */
 
 /**
- * The id's author segment dropped: `deepseek-v4.1-flash`. It is the model's
+ * The id's author segment dropped: `deepseek-v4.1-flash-1017`. It is the model's
  * author, not the provider — `local` serves `google/gemma-4-e4b` — and the
  * provider is already either the only one in the list or the heading above the
  * row, so repeating it on every line is noise.
