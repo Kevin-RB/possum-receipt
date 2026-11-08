@@ -278,6 +278,44 @@ describe(expectAnswerAgreesWithCount, () => {
     ).toBeFalsy();
   });
 
+  it("reads the denials a model actually writes", () => {
+    const noneReturned = {
+      input: {},
+      name: "search_line_items",
+      output: { count: 0, items: [], total: 0 },
+    };
+
+    const denials = [
+      "You don't have any Woolworths receipts on record from last year.",
+      "No, you didn’t buy any peanuts this month.",
+      "There weren't any matching purchases.",
+      "I couldn't find any cheese.",
+    ];
+
+    expect(
+      denials.map(
+        (answer) => check.run(observation({ answer, tools: [noneReturned] })).ok
+      )
+    ).toStrictEqual([true, true, true, true]);
+  });
+
+  it("reads a curly apostrophe as the contraction it is", () => {
+    expect(
+      check.run(
+        observation({
+          answer: "I couldn’t find any cheese — nothing matching it.",
+          tools: [
+            {
+              input: {},
+              name: "search_line_items",
+              output: { count: 0, items: [], total: 0 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
   it("accepts an absence mentioned in passing on a question that did find rows", () => {
     expect(
       check.run(
@@ -367,6 +405,24 @@ describe(expectNoClaim, () => {
 
 describe(expectAnswerNamesNewestDate, () => {
   const check = expectAnswerNamesNewestDate("search_line_items");
+
+  it("matches a date written with typographic spaces", () => {
+    // OpenAI-style models write "17 May 2026" with a U+202F, not a U+0020.
+    expect(
+      check.run(
+        observation({
+          answer: "The most recent purchase was on Sunday, 17 May 2026.",
+          tools: [
+            {
+              input: {},
+              name: "search_line_items",
+              output: { items: [{ date: "2026-05-17" }] },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
 
   it("passes when the answer names the newest returned date", () => {
     expect(

@@ -100,8 +100,19 @@ export const describeToolCalls = (tools: { name: string }[]): string =>
 
 const quote = (value: string) => JSON.stringify(value);
 
+/**
+ * Typography is not meaning. A model writes "17 May 2026" with a U+202F narrow
+ * space and "couldn’t" with a curly apostrophe; comparing raw bytes fails a
+ * correct answer for the font it chose, which is exactly the false negative
+ * these checks exist to avoid.
+ */
+const normalise = (text: string): string =>
+  text
+    .replaceAll(/[\u00A0\u2009\u202F]/gu, " ")
+    .replaceAll(/[\u2018\u2019]/gu, "'");
+
 const includes = (text: string, phrase: string): boolean =>
-  text.toLowerCase().includes(phrase.toLowerCase());
+  normalise(text).toLowerCase().includes(normalise(phrase).toLowerCase());
 
 /**
  * The read-only queries a chat can run. Every one of them is owner-scoped and
@@ -200,7 +211,7 @@ export const expectNoClaim = (phrases: string[]): Check => ({
   kind: "answer",
   run: (observation) => {
     const claims = sentences(observation.answer)
-      .filter((sentence) => !HEDGE.test(sentence))
+      .filter((sentence) => !HEDGE.test(normalise(sentence)))
       .filter((sentence) =>
         phrases.some((phrase) => includes(sentence, phrase))
       );
@@ -239,12 +250,14 @@ const SAYS_NOTHING = [
   /\bno\b[^.!?]{0,60}\b(?:receipts?|records?|results?|purchases?|matches?|items?)\b/iu,
   /\bnothing\b[^.!?]{0,40}\b(?:came|comes|matches?|matched|matching|turned|turns|found|on file|recorded|shows?)\b/iu,
   /\b(?:found|find|finds|have|has)\s+no\b/iu,
-  /\b(?:can'?t|cannot|couldn'?t|could not|didn'?t|did not|don'?t|do not|haven'?t|have not)\s+(?:find|see|locate|record)\b/iu,
+  // "I couldn't find", "you didn't buy", "don't have", "there aren't any".
+  /\b(?:can'?t|cannot|couldn'?t|could not|didn'?t|did not|don'?t|do not|doesn'?t|does not|haven'?t|have not)\s+(?:find|see|locate|record|purchase|buy|have)\b/iu,
+  /\b(?:isn'?t|aren'?t|wasn'?t|weren'?t)\s+any\b/iu,
   /\bnone\b|\bempty\b/iu,
 ];
 
 const saysNothing = (text: string): boolean =>
-  SAYS_NOTHING.some((pattern) => pattern.test(text));
+  SAYS_NOTHING.some((pattern) => pattern.test(normalise(text)));
 
 /**
  * The narrower half: the answer *claims the search found nothing*, which is a
@@ -259,7 +272,7 @@ const CLAIMS_NOT_FOUND = [
 ];
 
 const claimsNotFound = (text: string): boolean =>
-  CLAIMS_NOT_FOUND.some((pattern) => pattern.test(text));
+  CLAIMS_NOT_FOUND.some((pattern) => pattern.test(normalise(text)));
 
 const DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}\b/u;
 
