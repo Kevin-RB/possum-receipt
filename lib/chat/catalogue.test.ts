@@ -14,13 +14,7 @@ const load = (apiKey: string) => {
   return import("./catalogue");
 };
 
-const REMOTE_MODELS = [
-  "deepseek/deepseek-v4.1-flash",
-  "anthropic/claude-haiku-5.5",
-  "z-ai/glm-5.3-flash",
-  "qwen/qwen3.8-27b",
-  "google/gemini-3.5-flash-lite",
-];
+const REMOTE_MODELS = ["deepseek/deepseek-v4.1-flash-1017"];
 
 const LOCAL_MODEL = "google/gemma-4-e4b";
 
@@ -55,9 +49,9 @@ describe("chat catalogue", () => {
 
     expect(Object.keys(catalogue.chatProviders)).toStrictEqual(["openrouter"]);
     expect(catalogue.resolveChatModel()).toMatchObject({
-      id: "openrouter/deepseek/deepseek-v4.1-flash",
+      id: "openrouter/deepseek/deepseek-v4.1-flash-1017",
       selection: {
-        model: "deepseek/deepseek-v4.1-flash",
+        model: "deepseek/deepseek-v4.1-flash-1017",
         provider: "openrouter",
       },
     });
@@ -77,7 +71,7 @@ describe("chat catalogue", () => {
     const catalogue = await load("sk-test");
 
     const resolved = catalogue.resolveChatModel({
-      model: "deepseek/deepseek-v4.1-flash",
+      model: "deepseek/deepseek-v4.1-flash-1017",
       provider: "openrouter",
     });
 
@@ -87,12 +81,34 @@ describe("chat catalogue", () => {
     });
   });
 
+  it("offers the picker the resolved entries, in catalogue order and nothing else", async () => {
+    // The page hands this list to the picker, so it is the same resolution the
+    // route validates against: the client never learns a model the route would
+    // refuse, and its first row is the default.
+    const catalogue = await load("sk-test");
+
+    expect(catalogue.chatSelections()).toStrictEqual(
+      REMOTE_MODELS.map((model) => ({ model, provider: "openrouter" }))
+    );
+    expect(catalogue.chatSelections()[0]).toStrictEqual(
+      catalogue.resolveChatModel()?.selection
+    );
+  });
+
+  it("offers only local when no remote key resolves", async () => {
+    const catalogue = await load("");
+
+    expect(catalogue.chatSelections()).toStrictEqual([
+      { model: LOCAL_MODEL, provider: "local" },
+    ]);
+  });
+
   it("refuses a selection whose provider has no credential", async () => {
     const catalogue = await load("");
 
     expect(
       catalogue.resolveChatModel({
-        model: "deepseek/deepseek-v4.1-flash",
+        model: "deepseek/deepseek-v4.1-flash-1017",
         provider: "openrouter",
       })
     ).toBeNull();

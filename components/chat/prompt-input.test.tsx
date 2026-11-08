@@ -3,15 +3,30 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import type { ChatSelection } from "@/lib/chat/catalogue";
+
 import { PromptInput } from "./prompt-input";
+
+const remote: ChatSelection = {
+  model: "deepseek/deepseek-v4.1-flash-1017",
+  provider: "openrouter",
+};
+
+const local: ChatSelection = {
+  model: "google/gemma-4-e4b",
+  provider: "local",
+};
 
 const renderInput = () =>
   render(
     <PromptInput
       isBusy={false}
+      model={remote}
+      onChangeModel={() => 0}
       onStop={() => 0}
       onSubmit={() => 0}
       placeholder="Ask about your receipts…"
+      selections={[remote, local]}
     />
   );
 
@@ -38,5 +53,24 @@ describe(PromptInput, () => {
     fireEvent.click(screen.getByLabelText("Send"));
 
     expect(document.activeElement).not.toBe(textarea);
+  });
+
+  it("leaves the model picker alone, so it opens instead of focusing", () => {
+    renderInput();
+    const textarea = screen.getByPlaceholderText("Ask about your receipts…");
+
+    fireEvent.click(screen.getByLabelText(/^Choose a model/u));
+
+    expect(document.activeElement).not.toBe(textarea);
+  });
+
+  it("puts the picker beside the send button, in the footer", () => {
+    const { container } = renderInput();
+    const footer = container.querySelector('[data-slot="input-group-addon"]');
+
+    expect(
+      footer?.querySelector('[aria-label^="Choose a model"]')
+    ).toBeTruthy();
+    expect(footer?.textContent).toContain("deepseek-v4.1-flash-1017");
   });
 });

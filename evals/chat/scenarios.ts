@@ -1,8 +1,15 @@
 /**
  * Scenario definitions for the real-model chat eval. Each check asserts one
  * part of a run's behaviour — which tools were called, with which arguments,
- * how many steps it took, or what the answer said — so a regression report
- * names the part that broke rather than just failing the prompt.
+ * how far a loop ran, or what the answer said — so a regression report names
+ * the part that broke rather than just failing the prompt.
+ *
+ * **A run passes when it answered correctly with the lookups the question
+ * needed.** Steps and latency are reported, not scored: a model that searches a
+ * synonym after an empty result has still answered the question, and charging
+ * it a failure for the extra call made the score fall while the answers stayed
+ * right. The one efficiency failure kept is a run that reaches the agent's step
+ * ceiling, because that is a loop rather than an extra look.
  */
 
 export interface ToolCall {
@@ -45,9 +52,12 @@ export interface ExpectedTool {
 
 export interface ToolsOptions {
   /**
-   * Read tools the model may call on top of the expected ones. A model that
-   * double-checks an empty result with `list_receipts` is still answering the
-   * question; only unrelated tools are a failure.
+   * Tools the model may call on top of the expected ones, in any order. It
+   * defaults to the read-only queries, because a second lookup — a synonym
+   * after an empty result, a `list_receipts` after a spend total — is still the
+   * model answering the question. Pass `[]` where the scenario is about *not*
+   * acting first: a greeting, or a clarifying question that must be asked
+   * before any query runs.
    */
   allowExtra?: string[];
 }
@@ -90,18 +100,44 @@ export const describeToolCalls = (tools: { name: string }[]): string =>
 
 const quote = (value: string) => JSON.stringify(value);
 
+/**
+ * Typography is not meaning. A model writes "17 May 2026" with a U+202F narrow
+ * space and "couldn’t" with a curly apostrophe; comparing raw bytes fails a
+ * correct answer for the font it chose, which is exactly the false negative
+ * these checks exist to avoid.
+ */
+const normalise = (text: string): string =>
+  text
+    .replaceAll(/[\u00A0\u2009\u202F]/gu, " ")
+    .replaceAll(/[\u2018\u2019]/gu, "'");
+
 const includes = (text: string, phrase: string): boolean =>
-  text.toLowerCase().includes(phrase.toLowerCase());
+  normalise(text).toLowerCase().includes(normalise(phrase).toLowerCase());
 
 /**
- * Asserts the expected tool calls appear in order with the expected arguments.
- * Extra calls fail unless they are explicitly allowed: a question that needs
- * one lookup taking three is the kind of drift this eval exists to see, not a
- * pass with a footnote.
+ * The read-only queries a chat can run. Every one of them is owner-scoped and
+ * side-effect free, so an extra one costs tokens and a little latency but
+ * cannot change the answer's correctness — which is what this eval scores.
+ * `ask_user` is deliberately absent: stopping to ask when the reader asked a
+ * question is a different behaviour, and the scenarios that want it say so.
+ */
+const READ_TOOLS = [
+  "list_receipts",
+  "receipt_detail",
+  "search_line_items",
+  "spend_by_category",
+  "spend_by_merchant",
+];
+
+/**
+ * Asserts the expected tool calls appear, in order, with the expected
+ * arguments. Anything else on top is allowed when it is a read-only query;
+ * `ask_user`, or anything outside the read set, still fails unless the
+ * scenario names it.
  */
 export const expectTools = (
   expected: ExpectedTool[],
-  { allowExtra = [] }: ToolsOptions = {}
+  { allowExtra = READ_TOOLS }: ToolsOptions = {}
 ): Check => ({
   expected:
     describeToolCalls(expected) +
@@ -129,7 +165,7 @@ export const expectTools = (
   },
 });
 
-export const expectNoTools: Check = expectTools([]);
+export const expectNoTools: Check = expectTools([], { allowExtra: [] });
 
 export const expectClarification: Check = {
   expected: "ask_user is called",
@@ -175,7 +211,7 @@ export const expectNoClaim = (phrases: string[]): Check => ({
   kind: "answer",
   run: (observation) => {
     const claims = sentences(observation.answer)
-      .filter((sentence) => !HEDGE.test(sentence))
+      .filter((sentence) => !HEDGE.test(normalise(sentence)))
       .filter((sentence) =>
         phrases.some((phrase) => includes(sentence, phrase))
       );
@@ -189,30 +225,199 @@ export const expectNoClaim = (phrases: string[]): Check => ({
   },
 });
 
-export const expectMaxSteps = (max: number): Check => ({
-  expected: `at most ${max} steps`,
+/**
+ * The only efficiency check that fails a run. Every scenario gets it appended
+ * by the runner: a model that needs the agent's whole step budget has looped,
+ * which no amount of correct wording makes up for. A run that merely took one
+ * more lookup than usual is normal, and shows up in the reported step count.
+ */
+export const expectNoRunaway = (maxSteps: number): Check => ({
+  expected: `fewer than ${maxSteps} steps`,
   kind: "steps",
   run: (observation) => ({
     actual: `${observation.steps} ${observation.steps === 1 ? "step" : "steps"}`,
-    ok: observation.steps <= max,
+    ok: observation.steps < maxSteps,
   }),
 });
 
-/** Ways a model can say the search came back empty without inventing a date. */
-const NO_RECORDS = [
-  "no records",
-  "no results",
-  "no purchases",
-  "no matching",
-  "did not find",
-  "didn't find",
-  "could not find",
-  "couldn't find",
-  "have not bought",
-  "haven't bought",
+/**
+ * Ways a model reports that nothing was found. A short list of shapes rather
+ * than of sentences: "no peanut purchases", "nothing matching turned up",
+ * "I found no cheese", "that list is empty" all mean the same thing, and an
+ * answer that says one of them is right however it was phrased.
+ */
+const SAYS_NOTHING = [
+  /\bno\b[^.!?]{0,60}\b(?:receipts?|records?|results?|purchases?|matches?|items?)\b/iu,
+  /\bnothing\b[^.!?]{0,40}\b(?:came|comes|matches?|matched|matching|turned|turns|found|on file|recorded|shows?)\b/iu,
+  /\b(?:found|find|finds|have|has)\s+no\b/iu,
+  // "I couldn't find", "you didn't buy", "don't have", "there aren't any".
+  /\b(?:can'?t|cannot|couldn'?t|could not|didn'?t|did not|don'?t|do not|doesn'?t|does not|haven'?t|have not)\s+(?:find|see|locate|record|purchase|buy|have)\b/iu,
+  /\b(?:isn'?t|aren'?t|wasn'?t|weren'?t)\s+any\b/iu,
+  /\bnone\b|\bempty\b/iu,
 ];
 
+const saysNothing = (text: string): boolean =>
+  SAYS_NOTHING.some((pattern) => pattern.test(normalise(text)));
+
+/**
+ * The narrower half: the answer *claims the search found nothing*, which is a
+ * denial rather than a passing mention of an absence ("none in June" is fine on
+ * a question that did find rows; "I couldn't find any" is not).
+ */
+const CLAIMS_NOT_FOUND = [
+  /\b(?:can'?t|cannot|couldn'?t|could not|didn'?t|did not|have not|haven'?t)\s+(?:find|see|locate|record)\b/iu,
+  /\bnothing\b[^.!?]{0,40}\b(?:came|comes|turned|turns|matches?|matched|matching)\b/iu,
+  /\bno\b[^.!?]{0,40}\b(?:records?|results?|matches?)\b/iu,
+  /\bempty\b/iu,
+];
+
+const claimsNotFound = (text: string): boolean =>
+  CLAIMS_NOT_FOUND.some((pattern) => pattern.test(normalise(text)));
+
 const DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}\b/u;
+
+/**
+ * The fields a tool result carries money in. A count or an id is a number too,
+ * and collecting those would let `$12.00` pass because some lookup returned
+ * `count: 12` — the invented-amount hole this check exists to close.
+ */
+const MONEY_FIELDS = new Set([
+  "gst",
+  "lineTotal",
+  "subtotal",
+  "total",
+  "unitPrice",
+]);
+
+/**
+ * Every amount a tool returned, and only those. An answer may state a figure
+ * the question needs, but only one the data produced: a model inventing or
+ * mis-adding an amount is the failure this eval exists to catch (a real trace
+ * claimed $372.66 for rows summing to $373.16). A summary that quotes nothing
+ * is fine — the number is on screen in the rendered table.
+ */
+const amountsReturned = (value: unknown, isMoney = false): number[] => {
+  if (typeof value === "number") {
+    return isMoney && Number.isFinite(value) ? [value] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => amountsReturned(item, isMoney));
+  }
+  if (isRecord(value)) {
+    return Object.entries(value).flatMap(([key, child]) =>
+      amountsReturned(child, MONEY_FIELDS.has(key))
+    );
+  }
+  return [];
+};
+
+/** Amounts written with cents — `$49.67`, `1,234.56` — which is how money reads. */
+const MONEY_PATTERN =
+  /(?:\$|aud\s?)?(?<whole>\d{1,3}(?:,\d{3})+|\d+)\.(?<cents>\d{2})\b/giu;
+
+const amountsIn = (text: string): number[] =>
+  [...text.matchAll(MONEY_PATTERN)].map(({ groups }) =>
+    Number(`${groups?.whole.replaceAll(",", "")}.${groups?.cents}`)
+  );
+
+const sameAmount = (a: number, b: number): boolean => Math.abs(a - b) < 0.005;
+
+export const expectNoMismatchedAmounts: Check = {
+  expected: "no amount the tools did not return",
+  kind: "answer",
+  run: (observation) => {
+    const known = observation.tools.flatMap((tool) =>
+      amountsReturned(tool.output)
+    );
+    const wrong = amountsIn(observation.answer).filter(
+      (amount) => !known.some((value) => sameAmount(value, amount))
+    );
+
+    return {
+      actual:
+        wrong.length === 0
+          ? "every amount matches a tool result"
+          : `states ${wrong[0].toFixed(2)}, which no tool returned`,
+      ok: wrong.length === 0,
+    };
+  },
+};
+
+/**
+ * For a question whose answer the corpus decides is "none" — no cheese, no
+ * Woolworths receipts last year. The fixture is deterministic (ADR-0013), so
+ * the expectation can be stated outright instead of derived from whichever
+ * lookup the model happened to run last.
+ */
+export const expectAnswerSaysNothing: Check = {
+  expected: "answer reports that there are none",
+  kind: "answer",
+  run: (observation) => ({
+    actual: saysNothing(observation.answer)
+      ? "says there are none"
+      : "describes something as found",
+    ok: saysNothing(observation.answer),
+  }),
+};
+
+/** The rows of a tool result, whether it returns an array or wraps one. */
+const rowsOf = (output: unknown): unknown[] | null => {
+  if (Array.isArray(output)) {
+    return output;
+  }
+  if (isRecord(output) && Array.isArray(output.items)) {
+    return output.items;
+  }
+  return null;
+};
+
+/**
+ * "Did I buy …?" is answered yes or no, and the tool said which. This is the
+ * assertion that the answer agrees with the data rather than merely looking
+ * plausible: a model that searched, found nothing, and answered "none" passes;
+ * one that searched, found nothing, and described a purchase does not. When
+ * rows did come back it asserts the weaker, checkable half — that the answer
+ * does not deny them — rather than reading a count back out of prose.
+ */
+export const expectAnswerAgreesWithRows = (toolName: string): Check => ({
+  expected: `answer agrees with whether ${toolName} found rows`,
+  kind: "answer",
+  run: (observation) => {
+    const call = observation.tools.findLast((tool) => tool.name === toolName);
+    const output = call?.output;
+    const count =
+      isRecord(output) && typeof output.count === "number"
+        ? output.count
+        : rowsOf(output)?.length;
+
+    if (count === undefined) {
+      return {
+        actual: `${toolName} returned no count to check against`,
+        ok: false,
+      };
+    }
+
+    if (count === 0) {
+      const nothing = saysNothing(observation.answer);
+
+      return {
+        actual: nothing
+          ? "no rows, and the answer says so"
+          : "no rows, but the answer does not say so",
+        ok: nothing,
+      };
+    }
+
+    const denies = claimsNotFound(observation.answer);
+
+    return {
+      actual: denies
+        ? `${count} rows, but the answer says nothing was found`
+        : `${count} rows, and the answer does not deny them`,
+      ok: !denies,
+    };
+  },
+});
 
 /**
  * `search_line_items` returns newest first, so the first row is the answer to
@@ -266,9 +471,7 @@ export const expectAnswerNamesNewestDate = (toolName: string): Check => ({
         .at(-1) ?? null;
 
     if (!newest) {
-      const saysNone = NO_RECORDS.some((phrase) =>
-        includes(observation.answer, phrase)
-      );
+      const saysNone = saysNothing(observation.answer);
       const claimsDate = DATE_PATTERN.test(observation.answer);
       return {
         actual: saysNone
@@ -297,7 +500,7 @@ export const expectAnswerNamesNewestDate = (toolName: string): Check => ({
  */
 export const scenarios: Scenario[] = [
   {
-    checks: [expectNoTools, expectMaxSteps(1)],
+    checks: [expectNoTools],
     name: "greeting",
     prompt: "Hello",
   },
@@ -309,29 +512,26 @@ export const scenarios: Scenario[] = [
           name: "spend_by_category",
         },
       ]),
-      expectMaxSteps(2),
+      expectNoMismatchedAmounts,
     ],
     name: "category breakdown, period given",
     prompt: "Breakdown by category this year",
   },
   {
+    // Asking before looking is the behaviour: with no period the model has
+    // nothing to query, so `allowExtra: []` keeps a speculative lookup out.
     checks: [
       expectClarification,
-      expectTools([{ name: "ask_user" }]),
-      expectMaxSteps(1),
+      expectTools([{ name: "ask_user" }], { allowExtra: [] }),
     ],
     name: "category breakdown, no period",
     prompt: "Breakdown by category",
   },
   {
     checks: [
-      expectTools(
-        [{ input: { range: "last_month" }, name: "spend_by_merchant" }],
-        {
-          allowExtra: ["list_receipts"],
-        }
-      ),
-      expectMaxSteps(3),
+      expectTools([
+        { input: { range: "last_month" }, name: "spend_by_merchant" },
+      ]),
     ],
     name: "merchant spend, last month",
     prompt: "How much did I spend at Woolworths last month?",
@@ -339,7 +539,7 @@ export const scenarios: Scenario[] = [
   {
     checks: [
       expectTools([{ input: { query: "cheese" }, name: "search_line_items" }]),
-      expectMaxSteps(2),
+      expectAnswerAgreesWithRows("search_line_items"),
     ],
     name: "find a product",
     prompt: "Find cheese",
@@ -352,7 +552,7 @@ export const scenarios: Scenario[] = [
           name: "spend_by_category",
         },
       ]),
-      expectMaxSteps(2),
+      expectNoMismatchedAmounts,
     ],
     name: "top-level category total",
     prompt: "How much did I spend on groceries this year?",
@@ -365,7 +565,7 @@ export const scenarios: Scenario[] = [
           name: "search_line_items",
         },
       ]),
-      expectMaxSteps(2),
+      expectAnswerAgreesWithRows("search_line_items"),
     ],
     name: "product history, period given",
     prompt: "Did I buy yogurt this year?",
@@ -377,7 +577,7 @@ export const scenarios: Scenario[] = [
     // as nearest is not asserted — only that it did not stop to ask.
     checks: [
       expectTools([{ input: { query: "peanuts" }, name: "search_line_items" }]),
-      expectMaxSteps(2),
+      expectAnswerAgreesWithRows("search_line_items"),
     ],
     name: "product history, no match",
     prompt: "Did I buy peanuts in the last two weeks?",
@@ -388,7 +588,10 @@ export const scenarios: Scenario[] = [
     // calendar year.
     checks: [
       expectTools([{ input: { range: "last_year" }, name: "list_receipts" }]),
-      expectMaxSteps(2),
+      // The fixture holds no Woolworths receipts in 2025, and the model may
+      // reach that answer with or without the merchant filter, so the answer
+      // is what is checked — not the row count of the call it made last.
+      expectAnswerSaysNothing,
     ],
     name: "receipts from last year",
     prompt: "Show me my Woolworths receipts from last year",
@@ -401,7 +604,7 @@ export const scenarios: Scenario[] = [
           name: "search_line_items",
         },
       ]),
-      expectMaxSteps(2),
+      expectNoMismatchedAmounts,
     ],
     name: "product spend",
     prompt: "How much did I spend on chicken this year?",
@@ -410,7 +613,6 @@ export const scenarios: Scenario[] = [
     checks: [
       expectTools([{ name: "search_line_items" }]),
       expectAnswerNamesNewestDate("search_line_items"),
-      expectMaxSteps(3),
     ],
     name: "last purchase date",
     prompt: "When did I last buy yogurt?",

@@ -28,31 +28,19 @@ export type ChatProviderId = (typeof chatProviderIds)[number];
  * no remote credential resolves, not a cheaper hosted option. The default is
  * the first entry whose provider is registered, so a deployment without a key
  * starts on `local` and one with a key starts on the cheapest remote model.
+ *
+ * Prices are a snapshot (2026-11-08) and are re-read before a promotion, as
+ * ADR-0017 requires. The list is one remote model plus `local`: the price tail
+ * went first, and the models that survived it lost to this one on the eval
+ * suite — see the ADR for the numbers.
  */
 export const CHAT_CATALOGUE: readonly ChatCatalogueEntry[] = [
   {
-    model: "deepseek/deepseek-v4.1-flash",
-    price: { input: 0.051, output: 0.567 },
-    provider: "openrouter",
-  },
-  {
-    model: "anthropic/claude-haiku-5.5",
-    price: { input: 0.1, output: 0.5 },
-    provider: "openrouter",
-  },
-  {
-    model: "z-ai/glm-5.3-flash",
-    price: { input: 0.15, output: 0.5 },
-    provider: "openrouter",
-  },
-  {
-    model: "qwen/qwen3.8-27b",
-    price: { input: 0.15, output: 1.875 },
-    provider: "openrouter",
-  },
-  {
-    model: "google/gemini-3.5-flash-lite",
-    price: { input: 0.3, output: 2.5 },
+    // A dated revision, for the one case ADR-0017 allows it: the undated
+    // `deepseek/deepseek-v4.1-flash` alias is pinned to the 2026-09-10 revision
+    // at 8.5× this input price.
+    model: "deepseek/deepseek-v4.1-flash-1017",
+    price: { input: 0.006, output: 0.5 },
     provider: "openrouter",
   },
   {
@@ -117,11 +105,16 @@ export const chatProviders = registerProviders(process.env.OPENROUTER_API_KEY);
 const availableChatModels = (): ChatCatalogueEntry[] =>
   CHAT_CATALOGUE.filter((entry) => chatProviders[entry.provider] !== undefined);
 
-const defaultChatSelection = (): ChatSelection | null => {
-  const [entry] = availableChatModels();
+/**
+ * What the picker offers, and what the route accepts: the same list, in the
+ * same order, so the client cannot present an entry the route would refuse.
+ * Plain data — `provider` and `model` cross to the browser, the price does not.
+ */
+export const chatSelections = (): ChatSelection[] =>
+  availableChatModels().map(({ model, provider }) => ({ model, provider }));
 
-  return entry ? { model: entry.model, provider: entry.provider } : null;
-};
+const defaultChatSelection = (): ChatSelection | null =>
+  chatSelections()[0] ?? null;
 
 export interface ResolvedChatModel {
   /** `provider/model`, safe for logs and eval output: it carries no credential. */
