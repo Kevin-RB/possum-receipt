@@ -94,23 +94,56 @@ const matchesInput = (
  * the scenario did not ask for must not decide the verdict — otherwise a
  * `last_year` lookup can answer a `this_year` question, because it ran later.
  *
- * Falls back to every call when nothing matches, so a check attached to a
- * scenario whose expectation has drifted still reports a verdict rather than
- * passing or failing on an empty set.
+ * No fallback to every call: when nothing matches, the run has not made the
+ * lookup the question needed, and `expectTools` — which takes the same spec —
+ * has already failed it. Widening the scope here would let a broader lookup
+ * decide a narrower question.
  */
 const callsFor = (
   observation: Observation,
   expected: readonly ExpectedTool[]
 ): ToolCall[] => {
-  const matched = observation.tools.filter((call) =>
+  if (expected.length === 0) {
+    return observation.tools;
+  }
+
+  return observation.tools.filter((call) =>
     expected.some(
       (want) =>
         call.name === want.name &&
         (want.input === undefined || matchesInput(want.input, call.input))
     )
   );
+};
 
-  return matched.length > 0 ? matched : observation.tools;
+/** The keys that decide *which period* a lookup covers. */
+const PERIOD_KEYS = ["from", "range", "to"] as const;
+
+/**
+ * Whether two lookups cover the same period. Amounts are scoped by this rather
+ * than by the whole input: a subcategory breakdown beside a pinned category
+ * total answers the same period and is a legitimate figure to quote, while an
+ * all-time lookup must not vouch for a "this year" answer.
+ */
+const samePeriod = (
+  pinned: Record<string, unknown>,
+  actual: Record<string, unknown>
+): boolean => PERIOD_KEYS.every((key) => pinned[key] === actual[key]);
+
+const amountCalls = (
+  observation: Observation,
+  expected: readonly ExpectedTool[]
+): ToolCall[] => {
+  if (expected.length === 0) {
+    return observation.tools;
+  }
+
+  return observation.tools.filter((call) =>
+    expected.some(
+      (want) =>
+        call.name === want.name && samePeriod(want.input ?? {}, call.input)
+    )
+  );
 };
 
 export const formatTool = (tool: { input?: unknown; name: string }): string =>
@@ -278,6 +311,9 @@ export const expectNoRunaway = (maxSteps: number): Check => ({
 const SAYS_NOTHING = [
   /\bno\b[^.!?]{0,60}\b(?:receipts?|records?|results?|purchases?|matches?|items?)\b/iu,
   /\bno\s+(?:[\w'-]+\s+){0,4}(?:in|on|for|from|during|over|this|last|that|at|with|anywhere|at all)\b/iu,
+  // A terse denial ending the sentence: "No peanuts." / "No yogurt." The
+  // hedge nouns are excluded so "there's no way to know." stays a hedge.
+  /\bno\s+(?!way\b|idea\b|doubt\b|need\b|problem\b|chance\b|reason\b)[\w'-]+(?:\s+[\w'-]+){0,2}\s*[.!?,;]/iu,
   /\bnothing\b[^.!?]{0,40}\b(?:came|comes|matches?|matched|matching|turned|turns|found|on file|recorded|shows?)\b/iu,
   /\b(?:found|find|finds|have|has|are|is|were|was)\s+no\b/iu,
   // "I couldn't find", "you didn't buy", "don't have", "haven't purchased",
@@ -352,11 +388,12 @@ const amountsReturned = (value: unknown, isMoney = false): number[] => {
  *
  * The marker is what lets a whole-dollar amount be inspected without turning
  * every bare number back into money — the hole `MONEY_FIELDS` closed on the
- * tool side. Alternation is ordered and the scan resumes past a match, so
- * `$3.20` is read once, not again as `3.20`.
+ * tool side. The trailing guard is `(?!\d)` and not `(?![\d,])`: a figure is
+ * routinely followed by a comma in prose ("$1,203.87, of which…"), and
+ * rejecting that made the engine fall back to the whole-dollar prefix.
  */
 const MONEY_PATTERN =
-  /(?:\$|aud\s?)(?<markedWhole>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?<markedCents>\d{2}))?(?![\d,])|(?<![\d.,])(?<bareWhole>\d{1,3}(?:,\d{3})+|\d+)\.(?<bareCents>\d{2})(?!\d)/giu;
+  /(?:\$|aud\s?)(?<markedWhole>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?<markedCents>\d{2}))?(?!\d)|(?<![\d.,])(?<bareWhole>\d{1,3}(?:,\d{3})+|\d+)\.(?<bareCents>\d{2})(?!\d)/giu;
 
 const amountsIn = (text: string): number[] =>
   [...text.matchAll(MONEY_PATTERN)].map(({ groups }) => {
@@ -413,7 +450,7 @@ export const expectNoMismatchedAmounts = (
   expected: "no amount the tools did not return",
   kind: "answer",
   run: (observation) => {
-    const known = callsFor(observation, expected).flatMap((tool) =>
+    const known = amountCalls(observation, expected).flatMap((tool) =>
       amountsReturned(tool.output)
     );
     const wrong = amountsIn(observation.answer).filter(
@@ -587,7 +624,7 @@ const PEANUTS_SEARCH: ExpectedTool = {
 };
 
 const WOOLWORTHS_LAST_YEAR: ExpectedTool = {
-  input: { range: "last_year" },
+  input: { merchant: "Woolworths", range: "last_year" },
   name: "list_receipts",
 };
 
@@ -682,6 +719,10 @@ export const scenarios: Scenario[] = [
     // month it was provisioned (receipts sit relative to `asOf`, `last_year` is
     // a calendar year), so the check is agreement with the rows, not a
     // hardcoded "none" that would invert in January.
+    //
+    // The merchant is pinned with the range: a broad "all receipts last year"
+    // lookup would otherwise be the call the answer is judged against, and a
+    // correct "no Woolworths receipts" would fail on its rows.
     checks: [
       expectTools([WOOLWORTHS_LAST_YEAR]),
       expectAnswerAgreesWithRows(WOOLWORTHS_LAST_YEAR),

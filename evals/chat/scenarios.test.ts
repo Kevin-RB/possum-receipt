@@ -547,6 +547,37 @@ describe("scoping to the lookup the question asked for", () => {
     ).toBeTruthy();
   });
 
+  it("accepts a figure from a same-period breakdown the model also ran", () => {
+    // The mirror of the all-time case: a subcategory total beside the pinned
+    // category total answers the same period, so quoting it is legitimate.
+    const check = expectNoMismatchedAmounts([
+      {
+        input: { category: "Groceries", range: "this_year" },
+        name: "spend_by_category",
+      },
+    ]);
+
+    expect(
+      check.run(
+        observation({
+          answer: "Groceries cost $1,203.87, of which produce was $200.",
+          tools: [
+            {
+              input: { category: "Groceries", range: "this_year" },
+              name: "spend_by_category",
+              output: { total: 1203.87 },
+            },
+            {
+              input: { groupBy: "subcategory", range: "this_year" },
+              name: "spend_by_category",
+              output: { total: 200 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
   it("does not let an all-time total vouch for a this-year answer", () => {
     // Regression: the amount check pooled every call, so an extra all-time
     // lookup made its figure "known" for a question scoped to this year.
@@ -603,6 +634,8 @@ describe("the denials a model actually writes", () => {
     "There are no peanuts in the last two weeks.",
     "You have no peanut purchases on record.",
     "None.",
+    "No peanuts.",
+    "No yogurt.",
   ])("accepts %s", (answer) => {
     expect(check.run(observation({ answer, tools: empty })).ok).toBeTruthy();
   });
@@ -614,6 +647,14 @@ describe("the denials a model actually writes", () => {
           answer: "There's no way to know whether you bought peanuts.",
           tools: empty,
         })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("still refuses a hedge that ends the sentence", () => {
+    expect(
+      check.run(
+        observation({ answer: "There's no way to know.", tools: empty })
       ).ok
     ).toBeFalsy();
   });
@@ -676,10 +717,16 @@ describe("amounts in an answer", () => {
   });
 });
 
-/** A prior-year receipt lookup that returned the given number of rows. */
-const listReceipts = (count: number) => [
+/** The filter the scenario pins; a run may also list the period unfiltered. */
+const WOOLWORTHS_LAST_YEAR = { merchant: "Woolworths", range: "last_year" };
+
+/** A prior-year lookup that returned the given number of rows. */
+const listReceipts = (
+  count: number,
+  input: Record<string, unknown> = WOOLWORTHS_LAST_YEAR
+) => [
   {
-    input: { range: "last_year" },
+    input,
     name: "list_receipts",
     output: { count, items: Array.from({ length: count }, () => ({})) },
   },
@@ -714,6 +761,34 @@ describe("receipts from last year", () => {
         })
       ).ok
     ).toBeTruthy();
+    expect(
+      answerCheck?.run(
+        observation({
+          answer: "You have no Woolworths receipts from last year.",
+          tools: listReceipts(2),
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("is not decided by a broader lookup the question did not ask for", () => {
+    // "Show me my Woolworths receipts last year": a run that lists every
+    // receipt in the prior year and then filters in prose is still correct, so
+    // the unfiltered rows must not turn its denial into a failure.
+    expect(
+      answerCheck?.run(
+        observation({
+          answer: "You have no Woolworths receipts from last year.",
+          tools: [
+            ...listReceipts(3, { range: "last_year" }),
+            ...listReceipts(0, { merchant: "Woolworths", range: "last_year" }),
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("fails when the filtered lookup found receipts the answer denies", () => {
     expect(
       answerCheck?.run(
         observation({
