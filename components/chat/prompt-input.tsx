@@ -9,6 +9,9 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@/components/ui/input-group";
+import type { ChatSelection } from "@/lib/chat/catalogue";
+
+import { ModelPicker } from "./model-picker";
 
 const PromptInputSubmit = ({
   canSend,
@@ -53,16 +56,25 @@ const PromptInputSubmit = ({
 
 export const PromptInput = ({
   isBusy,
+  model,
+  onChangeModel,
   onStop,
   onSubmit,
   placeholder,
+  selections,
 }: {
   isBusy: boolean;
+  /** The catalogue entry the next message will be sent to. */
+  model: ChatSelection;
+  onChangeModel: (next: ChatSelection) => void;
   onStop: () => void;
   onSubmit: (text: string) => void;
   placeholder: string;
+  /** Every model this deployment resolves, in catalogue order. */
+  selections: readonly ChatSelection[];
 }) => {
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const trimmed = input.trim();
   const canSend = trimmed.length > 0;
@@ -84,7 +96,19 @@ export const PromptInput = ({
       }}
       ref={formRef}
     >
-      <InputGroup>
+      <InputGroup
+        onClick={(event) => {
+          // `InputGroupAddon` forwards a tap to `querySelector("input")`, which
+          // finds nothing here because the control is a textarea. Without this,
+          // every pixel of the footer that is not the send button — over half
+          // the composer on a phone — is dead, while `cursor-text` promises
+          // otherwise.
+          if ((event.target as HTMLElement).closest("button")) {
+            return;
+          }
+          textareaRef.current?.focus();
+        }}
+      >
         <InputGroupTextarea
           className="min-h-10"
           onChange={(event) => setInput(event.target.value)}
@@ -101,10 +125,16 @@ export const PromptInput = ({
             }
           }}
           placeholder={placeholder}
+          ref={textareaRef}
           rows={1}
           value={input}
         />
         <InputGroupAddon align="block-end">
+          <ModelPicker
+            onChange={onChangeModel}
+            selections={selections}
+            value={model}
+          />
           <PromptInputSubmit
             canSend={canSend}
             isBusy={isBusy}

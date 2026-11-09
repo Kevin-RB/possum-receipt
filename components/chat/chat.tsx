@@ -27,6 +27,7 @@ import {
   useMessageScrollerScrollable,
 } from "@/components/ui/message-scroller";
 import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
+import type { ChatSelection } from "@/lib/chat/catalogue";
 import { chatErrorText } from "@/lib/chat/errors";
 import { greetingFor } from "@/lib/chat/greeting";
 import { isLastStreaming } from "@/lib/chat/message-parts";
@@ -87,7 +88,24 @@ const findPendingQuestion = (
       )
     : undefined;
 
-export const Chat = ({ firstName }: { firstName: string }) => {
+export const Chat = ({
+  firstName,
+  selections,
+}: {
+  firstName: string;
+  /**
+   * The catalogue's resolved entries, in its own order. The page reads them on
+   * the server, so the browser holds no model id of its own and cannot offer
+   * one the route would refuse.
+   */
+  selections: readonly ChatSelection[];
+}) => {
+  // Per conversation and client-side only: a switch applies to the next
+  // message and the whole thread goes to the new model, nothing is stored, and
+  // a new conversation — a reload or "New chat" — starts on the default, which
+  // is the catalogue's first entry, the same one the route falls back to.
+  const [selection, setSelection] = useState<ChatSelection>(selections[0]);
+
   const {
     addToolOutput,
     error,
@@ -102,10 +120,15 @@ export const Chat = ({ firstName }: { firstName: string }) => {
     // the unanswered tool call is the signal that the agent is waiting.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     throttle: THROTTLE_MS,
-    // No body: the browser's zone is already on the request as `cf-timezone`,
-    // put there by the edge. Sending it again would make the chat a second
-    // source for the same question.
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    // The browser's zone is already on the request as `cf-timezone`, put there
+    // by the edge, so it is not sent again. The model is: it is the one thing
+    // about this request the reader chose, and it rides on every send —
+    // including the automatic resend after `ask_user` — because `useChat`
+    // reads the latest transport at send time.
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      body: selection,
+    }),
   });
 
   const busy = status === "submitted" || status === "streaming";
@@ -176,9 +199,12 @@ export const Chat = ({ firstName }: { firstName: string }) => {
               <EmptyContent className="w-full max-w-3xl">
                 <PromptInput
                   isBusy={busy}
+                  model={selection}
+                  onChangeModel={setSelection}
                   onStop={stop}
                   onSubmit={(text) => sendMessage({ text })}
                   placeholder="How can I help you today?"
+                  selections={selections}
                 />
                 <Suggestions onSelect={(text) => sendMessage({ text })} />
               </EmptyContent>
@@ -258,14 +284,20 @@ export const Chat = ({ firstName }: { firstName: string }) => {
             ) : null}
             <PromptInput
               isBusy={busy}
+              model={selection}
+              onChangeModel={setSelection}
               onStop={stop}
               onSubmit={(text) => sendMessage({ text })}
               placeholder="Ask about your receipts…"
+              selections={selections}
             />
             {busy ? null : (
               <Button
                 className="self-start"
-                onClick={() => setMessages([])}
+                onClick={() => {
+                  setMessages([]);
+                  setSelection(selections[0]);
+                }}
                 size="sm"
                 type="button"
                 variant="ghost"

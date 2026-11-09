@@ -1,9 +1,9 @@
 import { createAgentUIStreamResponse, validateUIMessages } from "ai";
 import { NextResponse } from "next/server";
 
-import { CHAT_MODEL } from "@/lib/ai/provider";
 import { auth } from "@/lib/auth";
 import { createChatAgent } from "@/lib/chat/agent";
+import { resolveChatModel } from "@/lib/chat/catalogue";
 import { chatErrorCode, chatFailureLog } from "@/lib/chat/errors";
 import { buildChatTools } from "@/lib/chat/tools";
 import type { ChatUIMessage } from "@/lib/chat/tools";
@@ -11,7 +11,7 @@ import { discardUntrustedToolOutputs } from "@/lib/chat/trust";
 import { reportError, USER_ERROR } from "@/lib/errors";
 import { viewerClock } from "@/lib/viewer";
 
-/** The app runs against a local model, so latency is bound by OCR-free local inference. */
+/** A remote model is usually faster than local inference, but the cap stays. */
 export const maxDuration = 60;
 
 export const POST = async (request: Request) => {
@@ -29,6 +29,23 @@ export const POST = async (request: Request) => {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  // The client sends only `{ provider, model }`; a base URL or a credential in
+  // the body is ignored, never forwarded. A body that names nothing takes the
+  // catalogue's default, which is `local` when no remote key resolves.
+  const selected = body as { model?: unknown; provider?: unknown } | null;
+  const resolved = resolveChatModel(
+    selected?.provider === undefined && selected?.model === undefined
+      ? undefined
+      : { model: selected?.model, provider: selected?.provider }
+  );
+
+  if (!resolved) {
+    return NextResponse.json(
+      { error: USER_ERROR.modelNotAvailable },
+      { status: 400 }
+    );
   }
 
   // The same chain the pages walk, through the same function — not a second
@@ -54,7 +71,12 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid messages." }, { status: 400 });
   }
 
-  const agent = await createChatAgent(session.user.id, today, timezone);
+  const agent = await createChatAgent({
+    model: resolved.model,
+    ownerId: session.user.id,
+    timezone,
+    today,
+  });
 
   return createAgentUIStreamResponse({
     abortSignal: request.signal,
@@ -65,7 +87,7 @@ export const POST = async (request: Request) => {
     // `chatFailureLog`'s projection, never the error itself: that carries the
     // messages sent to the model and a URL whose query string can hold a key.
     onError: (error) => {
-      reportError("chat", chatFailureLog(error, CHAT_MODEL));
+      reportError("chat", chatFailureLog(error, resolved.id));
       return USER_ERROR[chatErrorCode(error)];
     },
     // Everything past this point came off the wire. See `lib/chat/trust.ts`.
