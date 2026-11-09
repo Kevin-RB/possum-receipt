@@ -578,6 +578,61 @@ describe("scoping to the lookup the question asked for", () => {
     ).toBeTruthy();
   });
 
+  it("accepts a figure another tool returned for the same period", () => {
+    // A merchant total beside the pinned category total is a lookup the model
+    // was allowed to make; failing a correct answer for quoting it is the
+    // expensive direction. Only a different period is out of scope.
+    const check = expectNoMismatchedAmounts([
+      {
+        input: { category: "Groceries", range: "this_year" },
+        name: "spend_by_category",
+      },
+    ]);
+
+    expect(
+      check.run(
+        observation({
+          answer: "You spent $800 at Woolworths this year.",
+          tools: [
+            {
+              input: { range: "this_year" },
+              name: "spend_by_merchant",
+              output: { total: 800 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("treats a redundant bound beside the named range as the same period", () => {
+    const check = expectNoMismatchedAmounts([
+      {
+        input: { query: "chicken", range: "this_year" },
+        name: "search_line_items",
+      },
+    ]);
+
+    expect(
+      check.run(
+        observation({
+          answer: "You spent $26.97 on chicken this year.",
+          tools: [
+            {
+              input: {
+                from: "2026-01-01",
+                query: "chicken",
+                range: "this_year",
+              },
+              name: "search_line_items",
+              output: { total: 26.97 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
   it("does not let an all-time total vouch for a this-year answer", () => {
     // Regression: the amount check pooled every call, so an extra all-time
     // lookup made its figure "known" for a question scoped to this year.

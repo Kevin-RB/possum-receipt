@@ -120,16 +120,29 @@ const callsFor = (
 const PERIOD_KEYS = ["from", "range", "to"] as const;
 
 /**
- * Whether two lookups cover the same period. Amounts are scoped by this rather
- * than by the whole input: a subcategory breakdown beside a pinned category
- * total answers the same period and is a legitimate figure to quote, while an
- * all-time lookup must not vouch for a "this year" answer.
+ * Whether a lookup covers the period the pinned spec names. Only the keys the
+ * spec pins are compared — the subset rule `matchesInput` applies — so a
+ * redundant explicit bound beside a named range is the same period, while
+ * `range: "this_year"` and no range at all are not.
  */
-const samePeriod = (
+const coversPeriod = (
   pinned: Record<string, unknown>,
   actual: Record<string, unknown>
-): boolean => PERIOD_KEYS.every((key) => pinned[key] === actual[key]);
+): boolean =>
+  PERIOD_KEYS.every((key) =>
+    pinned[key] === undefined ? true : pinned[key] === actual[key]
+  );
 
+/**
+ * The calls whose figures may vouch for an answer: those covering the question's
+ * period, **whichever tool produced them**. The tool name is deliberately not
+ * part of the scope — a merchant total beside a category total is a figure the
+ * model was allowed to look up, and reporting it as invented is the expensive
+ * direction (it fails a correct answer).
+ *
+ * What the scope must still keep out is a *different period*: an all-time lookup
+ * cannot vouch for a "this year" answer.
+ */
 const amountCalls = (
   observation: Observation,
   expected: readonly ExpectedTool[]
@@ -139,10 +152,7 @@ const amountCalls = (
   }
 
   return observation.tools.filter((call) =>
-    expected.some(
-      (want) =>
-        call.name === want.name && samePeriod(want.input ?? {}, call.input)
-    )
+    expected.some((want) => coversPeriod(want.input ?? {}, call.input))
   );
 };
 
