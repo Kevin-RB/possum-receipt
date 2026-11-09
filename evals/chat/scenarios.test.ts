@@ -9,6 +9,7 @@ import {
   expectNoRunaway,
   expectNoTools,
   expectTools,
+  scenarios,
 } from "./scenarios";
 
 const observation = (overrides: Partial<Observation> = {}): Observation => ({
@@ -155,7 +156,7 @@ describe(expectNoRunaway, () => {
 });
 
 describe("mismatched amounts", () => {
-  const check = expectNoMismatchedAmounts;
+  const check = expectNoMismatchedAmounts([]);
   const totals = [
     {
       input: {},
@@ -221,7 +222,7 @@ describe("mismatched amounts", () => {
 });
 
 describe(expectAnswerAgreesWithRows, () => {
-  const check = expectAnswerAgreesWithRows("search_line_items");
+  const check = expectAnswerAgreesWithRows({ name: "search_line_items" });
 
   it("passes when nothing came back and the answer says so", () => {
     expect(
@@ -362,7 +363,7 @@ describe(expectAnswerAgreesWithRows, () => {
 
   it("reads a list result that is a bare array", () => {
     expect(
-      expectAnswerAgreesWithRows("list_receipts").run(
+      expectAnswerAgreesWithRows({ name: "list_receipts" }).run(
         observation({
           answer: "There are no Woolworths receipts from last year.",
           tools: [{ input: {}, name: "list_receipts", output: [] }],
@@ -426,7 +427,7 @@ describe(expectNoClaim, () => {
 });
 
 describe(expectAnswerNamesNewestDate, () => {
-  const check = expectAnswerNamesNewestDate("search_line_items");
+  const check = expectAnswerNamesNewestDate({ name: "search_line_items" });
 
   it("matches a date written with typographic spaces", () => {
     // OpenAI-style models write "17 May 2026" with a U+202F, not a U+0020.
@@ -486,6 +487,368 @@ describe(expectAnswerNamesNewestDate, () => {
           tools: [
             { input: {}, name: "search_line_items", output: { items: [] } },
           ],
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+});
+
+/** A yogurt search for one range, with the given number of rows back. */
+const searchCall = (range: string, count: number) => ({
+  input: { query: "yogurt", range },
+  name: "search_line_items",
+  output: { count, items: Array.from({ length: count }, () => ({})) },
+});
+
+describe("scoping to the lookup the question asked for", () => {
+  const YOGURT_THIS_YEAR = {
+    input: { query: "yogurt", range: "this_year" },
+    name: "search_line_items",
+  };
+
+  it("fails a denial when a later, unrelated lookup came back empty", () => {
+    // Regression: `findLast` read the empty `last_year` call and passed a run
+    // that denied rows the `this_year` lookup returned.
+    const check = expectAnswerAgreesWithRows(YOGURT_THIS_YEAR);
+
+    expect(
+      check.run(
+        observation({
+          answer: "No, you didn't buy any yogurt this year.",
+          tools: [searchCall("this_year", 4), searchCall("last_year", 0)],
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("ignores a lookup the scenario did not ask for", () => {
+    const check = expectAnswerAgreesWithRows(YOGURT_THIS_YEAR);
+
+    expect(
+      check.run(
+        observation({
+          answer: "You bought yogurt twice this year.",
+          tools: [searchCall("last_year", 9), searchCall("this_year", 2)],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("passes only when every lookup for the question was empty", () => {
+    const check = expectAnswerAgreesWithRows(YOGURT_THIS_YEAR);
+
+    expect(
+      check.run(
+        observation({
+          answer: "No yogurt purchases this year.",
+          tools: [searchCall("this_year", 0), searchCall("this_year", 0)],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("accepts a figure from a same-period breakdown the model also ran", () => {
+    // The mirror of the all-time case: a subcategory total beside the pinned
+    // category total answers the same period, so quoting it is legitimate.
+    const check = expectNoMismatchedAmounts([
+      {
+        input: { category: "Groceries", range: "this_year" },
+        name: "spend_by_category",
+      },
+    ]);
+
+    expect(
+      check.run(
+        observation({
+          answer: "Groceries cost $1,203.87, of which produce was $200.",
+          tools: [
+            {
+              input: { category: "Groceries", range: "this_year" },
+              name: "spend_by_category",
+              output: { total: 1203.87 },
+            },
+            {
+              input: { groupBy: "subcategory", range: "this_year" },
+              name: "spend_by_category",
+              output: { total: 200 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("accepts a figure another tool returned for the same period", () => {
+    // A merchant total beside the pinned category total is a lookup the model
+    // was allowed to make; failing a correct answer for quoting it is the
+    // expensive direction. Only a different period is out of scope.
+    const check = expectNoMismatchedAmounts([
+      {
+        input: { category: "Groceries", range: "this_year" },
+        name: "spend_by_category",
+      },
+    ]);
+
+    expect(
+      check.run(
+        observation({
+          answer: "You spent $800 at Woolworths this year.",
+          tools: [
+            {
+              input: { range: "this_year" },
+              name: "spend_by_merchant",
+              output: { total: 800 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("treats a redundant bound beside the named range as the same period", () => {
+    const check = expectNoMismatchedAmounts([
+      {
+        input: { query: "chicken", range: "this_year" },
+        name: "search_line_items",
+      },
+    ]);
+
+    expect(
+      check.run(
+        observation({
+          answer: "You spent $26.97 on chicken this year.",
+          tools: [
+            {
+              input: {
+                from: "2026-01-01",
+                query: "chicken",
+                range: "this_year",
+              },
+              name: "search_line_items",
+              output: { total: 26.97 },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("does not let an all-time total vouch for a this-year answer", () => {
+    // Regression: the amount check pooled every call, so an extra all-time
+    // lookup made its figure "known" for a question scoped to this year.
+    const check = expectNoMismatchedAmounts([
+      {
+        input: { query: "chicken", range: "this_year" },
+        name: "search_line_items",
+      },
+    ]);
+
+    const thisYear = {
+      input: { query: "chicken", range: "this_year" },
+      name: "search_line_items",
+      output: { summary: { total: 26.97 } },
+    };
+    const allTime = {
+      input: { query: "chicken" },
+      name: "search_line_items",
+      output: { summary: { total: 89.91 } },
+    };
+
+    expect(
+      check.run(
+        observation({
+          answer: "You've spent $89.91 on chicken this year.",
+          tools: [thisYear, allTime],
+        })
+      ).ok
+    ).toBeFalsy();
+    expect(
+      check.run(
+        observation({
+          answer: "You've spent $26.97 on chicken this year.",
+          tools: [thisYear, allTime],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+});
+
+describe("the denials a model actually writes", () => {
+  const check = expectAnswerAgreesWithRows({ name: "search_line_items" });
+  const empty = [
+    {
+      input: { query: "peanuts" },
+      name: "search_line_items",
+      output: { count: 0, items: [] },
+    },
+  ];
+
+  it.each([
+    "No peanuts in the last two weeks.",
+    "You haven't purchased any peanuts in the last two weeks.",
+    "There are no peanuts in the last two weeks.",
+    "You have no peanut purchases on record.",
+    "None.",
+    "No peanuts.",
+    "No yogurt.",
+  ])("accepts %s", (answer) => {
+    expect(check.run(observation({ answer, tools: empty })).ok).toBeTruthy();
+  });
+
+  it("does not read a hedge as a claim that the corpus is empty", () => {
+    expect(
+      check.run(
+        observation({
+          answer: "There's no way to know whether you bought peanuts.",
+          tools: empty,
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("still refuses a hedge that ends the sentence", () => {
+    expect(
+      check.run(
+        observation({ answer: "There's no way to know.", tools: empty })
+      ).ok
+    ).toBeFalsy();
+  });
+});
+
+describe("amounts in an answer", () => {
+  const totals = [
+    {
+      input: {},
+      name: "spend_by_category",
+      output: { categories: [], total: 1203.87 },
+    },
+  ];
+
+  it("inspects a whole-dollar figure written as money", () => {
+    // Regression: the pattern required cents, so "$500" was not read at all and
+    // any invented round number passed.
+    expect(
+      expectNoMismatchedAmounts([]).run(
+        observation({ answer: "You spent $500 on groceries.", tools: totals })
+      ).ok
+    ).toBeFalsy();
+    expect(
+      expectNoMismatchedAmounts([]).run(
+        observation({
+          answer: "You spent $1,203.87 on groceries.",
+          tools: totals,
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("does not read a year or a count as money", () => {
+    expect(
+      expectNoMismatchedAmounts([]).run(
+        observation({
+          answer: "Across 2026 you bought 3 receipts' worth.",
+          tools: totals,
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("compares a discount by magnitude, which is how it is quoted", () => {
+    // Regression: the tool returns -3.20 and the answer says "$3.20 discount".
+    expect(
+      expectNoMismatchedAmounts([]).run(
+        observation({
+          answer: "That receipt includes a $3.20 discount.",
+          tools: [
+            {
+              input: {},
+              name: "receipt_detail",
+              output: { items: [{ lineTotal: -3.2 }] },
+            },
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+});
+
+/** The filter the scenario pins; a run may also list the period unfiltered. */
+const WOOLWORTHS_LAST_YEAR = { merchant: "Woolworths", range: "last_year" };
+
+/** A prior-year lookup that returned the given number of rows. */
+const listReceipts = (
+  count: number,
+  input: Record<string, unknown> = WOOLWORTHS_LAST_YEAR
+) => [
+  {
+    input,
+    name: "list_receipts",
+    output: { count, items: Array.from({ length: count }, () => ({})) },
+  },
+];
+
+describe("receipts from last year", () => {
+  // The fixture dates receipts relative to the day it was provisioned, so how
+  // many fall in the prior calendar year depends on that month — zero in
+  // November, several in January. The scenario must pass either way.
+  const scenario = scenarios.find(
+    (candidate) => candidate.name === "receipts from last year"
+  );
+  const answerCheck = scenario?.checks.find((check) => check.kind === "answer");
+
+  it("passes when the prior year held none", () => {
+    expect(
+      answerCheck?.run(
+        observation({
+          answer: "You have no Woolworths receipts from last year.",
+          tools: listReceipts(0),
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("passes when it held some, as it does for a fixture provisioned in January", () => {
+    expect(
+      answerCheck?.run(
+        observation({
+          answer: "You have two Woolworths receipts from last year.",
+          tools: listReceipts(2),
+        })
+      ).ok
+    ).toBeTruthy();
+    expect(
+      answerCheck?.run(
+        observation({
+          answer: "You have no Woolworths receipts from last year.",
+          tools: listReceipts(2),
+        })
+      ).ok
+    ).toBeFalsy();
+  });
+
+  it("is not decided by a broader lookup the question did not ask for", () => {
+    // "Show me my Woolworths receipts last year": a run that lists every
+    // receipt in the prior year and then filters in prose is still correct, so
+    // the unfiltered rows must not turn its denial into a failure.
+    expect(
+      answerCheck?.run(
+        observation({
+          answer: "You have no Woolworths receipts from last year.",
+          tools: [
+            ...listReceipts(3, { range: "last_year" }),
+            ...listReceipts(0, { merchant: "Woolworths", range: "last_year" }),
+          ],
+        })
+      ).ok
+    ).toBeTruthy();
+  });
+
+  it("fails when the filtered lookup found receipts the answer denies", () => {
+    expect(
+      answerCheck?.run(
+        observation({
+          answer: "You have no Woolworths receipts from last year.",
+          tools: listReceipts(2),
         })
       ).ok
     ).toBeFalsy();
