@@ -90,7 +90,14 @@ const registerProviders = (
   openRouterKey: string | undefined
 ): Partial<Record<ChatProviderId, ProviderRegistration>> => {
   if (openRouterKey) {
-    const openrouter = createOpenRouter({ apiKey: openRouterKey });
+    // `strict` is the mode for OpenRouter's own API: the adapter sends
+    // `stream_options.include_usage` only in it, so a `compatible` instance
+    // never reports what a question cost. It leaves `provider` routing flags
+    // alone, so `require_parameters` and `zdr` are unaffected.
+    const openrouter = createOpenRouter({
+      apiKey: openRouterKey,
+      compatibility: "strict",
+    });
     return {
       openrouter: (model) => openrouter.chat(model, OPENROUTER_ROUTING),
     };
