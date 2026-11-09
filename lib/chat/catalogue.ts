@@ -129,6 +129,27 @@ export interface ResolvedChatModel {
  * the default, which is how a request that names nothing (the picker has not
  * sent a choice yet) still works.
  */
+/**
+ * The catalogue's local entry, resolved whether or not this environment offers
+ * it. `pnpm eval:chat --local` is the only caller: the eval compares models, so
+ * it must be able to measure the local one while a remote key still resolves —
+ * which is exactly the selection `resolveChatModel` refuses, because a
+ * deployment must not serve that model to a reader.
+ */
+export const resolveLocalChatModel = (): ResolvedChatModel | null => {
+  const entry = CHAT_CATALOGUE.find(
+    (candidate) => candidate.provider === "local"
+  );
+
+  return entry
+    ? {
+        id: `${entry.provider}/${entry.model}`,
+        model: lmstudio.chatModel(entry.model),
+        selection: { model: entry.model, provider: "local" },
+      }
+    : null;
+};
+
 export const resolveChatModel = (
   selection?: unknown
 ): ResolvedChatModel | null => {

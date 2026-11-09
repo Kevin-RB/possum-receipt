@@ -137,4 +137,22 @@ describe("chat catalogue", () => {
     expect(catalogue.resolveChatModel({ provider: "openrouter" })).toBeNull();
     expect(catalogue.resolveChatModel("openrouter")).toBeNull();
   });
+
+  it("resolves the local entry for the eval even where the picker would not offer it", async () => {
+    // `pnpm eval:chat --local` measures a model a deployment deliberately does
+    // not show, without unsetting the key first. The refusal above still holds:
+    // the route asks `resolveChatModel`, and only the eval asks for this.
+    const catalogue = await load("sk-test");
+
+    expect(catalogue.chatSelections()).toStrictEqual([
+      { model: REMOTE_MODELS[0], provider: "openrouter" },
+    ]);
+    expect(catalogue.resolveLocalChatModel()).toMatchObject({
+      id: `local/${LOCAL_MODEL}`,
+      selection: { model: LOCAL_MODEL, provider: "local" },
+    });
+    expect(
+      catalogue.resolveChatModel({ model: LOCAL_MODEL, provider: "local" })
+    ).toBeNull();
+  });
 });
