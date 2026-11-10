@@ -12,7 +12,7 @@ import { FIXTURE_EMAIL } from "@/lib/db/fixture";
 import { user } from "@/lib/db/schema/auth";
 import { DEFAULT_TIMEZONE, resolveToday } from "@/lib/time";
 
-import { EVAL_USAGE, parseEvalArgs } from "./args";
+import { EvalUsageError, parseEvalArgs } from "./args";
 import type {
   Check,
   CheckResult,
@@ -354,19 +354,13 @@ const main = async () => {
 try {
   await main();
 } catch (error) {
-  // A usage error is the caller's typo, not a crash: print what the script
-  // accepts and stop, rather than a stack trace around a flag mistake.
-  const isUsageError =
-    error instanceof TypeError &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    error.code.startsWith("ERR_PARSE_ARGS");
-
-  if (!isUsageError) {
+  // A usage error is the caller's typo, not a crash: it already carries the
+  // reason and the usage block, so it prints without a stack trace.
+  if (!(error instanceof EvalUsageError)) {
     throw error;
   }
 
-  console.error(`${EVAL_USAGE}\n`);
+  console.error(`${error.message}\n`);
   process.exitCode = 1;
 } finally {
   await db.$client.end();

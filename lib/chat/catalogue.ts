@@ -124,12 +124,6 @@ export interface ResolvedChatModel {
 }
 
 /**
- * A selection to the model the agent runs on, or `null` when the selection is
- * not in the catalogue or its provider has no credential. `undefined` asks for
- * the default, which is how a request that names nothing (the picker has not
- * sent a choice yet) still works.
- */
-/**
  * The catalogue's local entry, resolved whether or not this environment offers
  * it. `pnpm eval:chat --local` is the only caller: the eval compares models, so
  * it must be able to measure the local one while a remote key still resolves —
@@ -150,6 +144,12 @@ export const resolveLocalChatModel = (): ResolvedChatModel | null => {
     : null;
 };
 
+/**
+ * A selection to the model the agent runs on, or `null` when the selection is
+ * not in the catalogue or its provider has no credential. `undefined` asks for
+ * the default, which is how a request that names nothing (the picker has not
+ * sent a choice yet) still works.
+ */
 export const resolveChatModel = (
   selection?: unknown
 ): ResolvedChatModel | null => {
