@@ -1,6 +1,6 @@
 # ADR-0017: App-owned provider keys and a curated model catalogue
 
-Date: 2026-11-04 Revised: 2026-11-08
+Date: 2026-11-04 Revised: 2026-11-09
 
 ## Status
 
@@ -24,7 +24,7 @@ The AI SDK already provides the adapter. `@openrouter/ai-sdk-provider` implement
 
 - **Keys come from the deployment environment.** `OPENROUTER_API_KEY` is read on the server; LM Studio takes a base URL, not a key. A provider whose key is absent is not registered, and its models do not appear in the picker. No key is collected from a browser, sent in a request, stored in Postgres, or written to a log.
 - **The client sends only `{ provider, model }`.** Both are validated against the catalogue before any provider is constructed. A client-supplied base URL is refused: it is an SSRF path into the compose network.
-- **The registry is a module-level singleton.** With one app credential there is no per-user credential to isolate, so building it once at module load is safe and simpler than per-request construction. It holds whichever of `openrouter` and `local` the environment registers — exactly one, per the absence rule below. `createChatAgent` takes the resolved `LanguageModel` instead of reading `CHAT_MODEL`.
+- **The registry is a module-level singleton.** With one app credential there is no per-user credential to isolate, so building it once at module load is safe and simpler than per-request construction. It holds the providers the environment registers: `openrouter` when a credential resolves, and `local` when no credential does — plus, in development, alongside one — per the absence rule below. `createChatAgent` takes the resolved `LanguageModel` instead of reading `CHAT_MODEL`.
 - **One remote provider, with its own adapter.** OpenRouter uses `@openrouter/ai-sdk-provider`, whose typed `provider.zdr` and `provider.require_parameters` avoid the generic compatible provider's `providerOptions` passthrough. LM Studio keeps `@ai-sdk/openai-compatible`.
 - **Every catalogue entry must support tool calling.** `tools` is the one required capability; a model without it would answer without querying the receipts, which is the worst failure this chat can have. `vision` and `structuredOutput` are not needed here, and there is no per-entry provider options payload: the launch catalogue sends provider defaults (no thinking level, no reasoning exclusion) and gains that field only if a model demands it.
 - **The capability contract has two gates and three recorded facts.** `tools`, and — for every remote entry — at least one endpoint supporting both ZDR and tools, because the routing flag below is unconditional. Context window, maximum output and pricing are recorded, not gated: the curated list is already small. Pricing is a dated snapshot for cost review, never shown in the picker.
