@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatSelection } from "@/lib/chat/catalogue";
+import { USER_ERROR } from "@/lib/errors";
 
 /**
  * The request is what this pins: the selection the reader sees on the picker
@@ -13,7 +14,9 @@ import type { ChatSelection } from "@/lib/chat/catalogue";
  * body `chat.tsx` builds can be read without a live agent or a provider.
  */
 const hooks = vi.hoisted(() => ({
+  error: undefined as unknown,
   messages: [] as unknown[],
+  status: "ready" as "error" | "ready" | "streaming" | "submitted",
   transport: undefined as unknown,
 }));
 
@@ -23,12 +26,12 @@ vi.mock(import("@ai-sdk/react"), () => ({
     hooks.transport = options.transport;
     return {
       addToolOutput: () => 0,
-      error: undefined,
+      error: hooks.error,
       id: "chat-1",
       messages: hooks.messages,
       sendMessage: () => 0,
       setMessages: () => 0,
-      status: "ready",
+      status: hooks.status,
       stop: () => 0,
     };
   },
@@ -99,10 +102,14 @@ const pickLocal = async () => {
 const renderChat = () =>
   render(<Chat firstName="Kevin" selections={[deepseek, local]} />);
 
+const chat = () => <Chat firstName="Kevin" selections={[deepseek, local]} />;
+
 describe(Chat, () => {
   beforeEach(() => {
     bodies.length = 0;
+    hooks.error = undefined;
     hooks.messages = [];
+    hooks.status = "ready";
     writes.length = 0;
     vi.stubGlobal("localStorage", recordingStorage());
     vi.stubGlobal("sessionStorage", recordingStorage());
@@ -156,6 +163,24 @@ describe(Chat, () => {
       model: local.model,
       provider: local.provider,
     });
+  });
+
+  it("names the composer, in the empty state and in a conversation", () => {
+    const view = renderChat();
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeTruthy();
+
+    hooks.messages = [
+      {
+        id: "m1",
+        parts: [{ text: "how much this month?", type: "text" }],
+        role: "user",
+      },
+    ];
+    view.rerender(chat());
+
+    // The same composer moves to the footer of the thread; the placeholder
+    // changed, but the name did not.
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeTruthy();
   });
 
   it("offers the picker in a conversation, not only in the empty state", () => {
@@ -213,5 +238,63 @@ describe(Chat, () => {
       screen.getByLabelText("Choose a model: deepseek-v4.1-flash-1017")
     ).toBeTruthy();
     expect(writes).toStrictEqual([]);
+  });
+
+  describe("the status region", () => {
+    it("is mounted empty before anything has been asked", () => {
+      renderChat();
+
+      // A live region inserted together with its first message is usually not
+      // announced at all, so it exists — empty — from the first render.
+      expect(screen.getByRole("status").textContent).toBe("");
+    });
+
+    it("says the answer is ready once a response completes", async () => {
+      const view = renderChat();
+      expect(screen.getByRole("status").textContent).toBe("");
+
+      hooks.status = "streaming";
+      view.rerender(chat());
+
+      // Nothing is said while the turn is in flight: "Thinking…" is an
+      // interstitial state, and announcing it is noise.
+      expect(screen.getByRole("status").textContent).toBe("");
+
+      hooks.messages = [
+        {
+          id: "m1",
+          parts: [{ text: "how much this month?", type: "text" }],
+          role: "user",
+        },
+        {
+          id: "m2",
+          parts: [{ text: "About $420.", type: "text" }],
+          role: "assistant",
+        },
+      ];
+      hooks.status = "ready";
+      view.rerender(chat());
+
+      await waitFor(() => {
+        expect(screen.getByRole("status").textContent).toBe("Answer ready");
+      });
+    });
+
+    it("announces a failure in the catalogue's own words", async () => {
+      const view = renderChat();
+
+      hooks.status = "streaming";
+      view.rerender(chat());
+
+      hooks.error = new Error(USER_ERROR.unauthorized);
+      hooks.status = "error";
+      view.rerender(chat());
+
+      await waitFor(() => {
+        expect(screen.getByRole("status").textContent).toBe(
+          USER_ERROR.unauthorized
+        );
+      });
+    });
   });
 });

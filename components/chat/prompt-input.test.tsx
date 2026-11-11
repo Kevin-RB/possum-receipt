@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ChatSelection } from "@/lib/chat/catalogue";
 
@@ -17,20 +17,67 @@ const local: ChatSelection = {
   provider: "local",
 };
 
-const renderInput = () =>
+const renderInput = (onSubmit: (text: string) => void = () => 0) =>
   render(
     <PromptInput
       isBusy={false}
       model={remote}
       onChangeModel={() => 0}
       onStop={() => 0}
-      onSubmit={() => 0}
+      onSubmit={onSubmit}
       placeholder="Ask about your receipts…"
       selections={[remote, local]}
     />
   );
 
 describe(PromptInput, () => {
+  it("names the composer, since a placeholder is not a label", () => {
+    renderInput();
+
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeTruthy();
+  });
+
+  it("sends on a plain Enter", () => {
+    const onSubmit = vi.fn<(text: string) => void>();
+    renderInput(onSubmit);
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(textarea, { target: { value: "how much this month?" } });
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(onSubmit).toHaveBeenCalledWith("how much this month?");
+  });
+
+  it("leaves the confirming Enter of an IME composition alone", () => {
+    const onSubmit = vi.fn<(text: string) => void>();
+    renderInput(onSubmit);
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(textarea, { target: { value: "先月の食料品" } });
+
+    // Safari can deliver `compositionend` before the keydown that confirmed
+    // the candidate, so `isComposing` is already false by the time the handler
+    // runs. The keystroke still reports `keyCode` 229 (VK_PROCESSKEY), which is
+    // what keeps a half-typed character out of the message.
+    fireEvent.keyDown(textarea, {
+      isComposing: false,
+      key: "Enter",
+      keyCode: 229,
+    });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("leaves the Enter that arrives mid-composition alone", () => {
+    const onSubmit = vi.fn<(text: string) => void>();
+    renderInput(onSubmit);
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(textarea, { target: { value: "先月の食" } });
+
+    fireEvent.keyDown(textarea, { isComposing: true, key: "Enter" });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("focuses the textarea when the footer is tapped", () => {
     const { container } = renderInput();
     const textarea = screen.getByPlaceholderText("Ask about your receipts…");

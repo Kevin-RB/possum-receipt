@@ -121,7 +121,10 @@ const Step = ({
   title: string;
 }) => {
   const line = (
-    <TraceLine aria-live={status ? "polite" : "off"} status={status}>
+    // No `aria-live`: the chat owns one polite status region for the whole
+    // transcript, so a step that changes state is not announced twice, once per
+    // row.
+    <TraceLine status={status}>
       <TraceIcon>
         <StatusIcon status={status} />
       </TraceIcon>
