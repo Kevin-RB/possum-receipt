@@ -37,13 +37,19 @@ const iconFor = (value: string | undefined) => {
 };
 
 export const ThemeToggle = () => {
-  const { theme, setTheme } = useTheme();
+  const { setTheme, systemTheme, theme } = useTheme();
 
   // `theme` is undefined until next-themes has read localStorage, which it
   // cannot do on the server. Rendering the resolved icon before mount would
   // pick the wrong one and have it corrected a frame later.
   const mounted = useMounted();
   const active = mounted ? (theme ?? "system") : "system";
+
+  // The system option names what it currently resolves to. It is the system
+  // preference, not the applied theme: a reader overriding to light is still
+  // being told what "System" would follow. The value is browser-only, so it
+  // joins the label only after mount — the server never had it.
+  const system = mounted ? systemTheme : undefined;
 
   return (
     <DropdownMenu>
@@ -71,7 +77,9 @@ export const ThemeToggle = () => {
               closeOnClick
             >
               <option.icon />
-              {option.label}
+              {option.value === "system" && system
+                ? `System (currently ${system})`
+                : option.label}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

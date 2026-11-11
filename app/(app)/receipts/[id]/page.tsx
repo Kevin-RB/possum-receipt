@@ -53,7 +53,13 @@ const ReceiptImage = ({
       <Image
         alt="Receipt image"
         className="object-contain p-4"
+        // The receipt is what the page is for, so it is the largest thing on
+        // screen and the LCP candidate. Its bytes come from an authenticated
+        // route rather than an optimizable asset, so the win is in telling the
+        // browser to start now and not to defer it as below-the-fold lazy.
+        fetchPriority="high"
         fill
+        loading="eager"
         sizes="(max-width: 1024px) 100vw, 50vw"
         src={`/api/receipts/${receiptId}/image`}
         unoptimized
