@@ -7,13 +7,16 @@ import { CHAT_CATALOGUE } from "./catalogue";
  * so each case imports a fresh copy with the key it is about. A registry built
  * per request would hide the bug these pin: a provider that resolves differently
  * from the one the picker last saw.
+ *
+ * `nodeEnv` defaults to `"test"` rather than inheriting the ambient value: a
+ * shell or container that exports `NODE_ENV=development` would otherwise flip
+ * every keyed case to the dev registry, failing assertions that describe a
+ * deployment. A case that is about the gate passes `"development"` itself.
  */
-const load = (apiKey: string, nodeEnv?: "development" | "test") => {
+const load = (apiKey: string, nodeEnv: "development" | "test" = "test") => {
   vi.resetModules();
   vi.stubEnv("OPENROUTER_API_KEY", apiKey);
-  if (nodeEnv) {
-    vi.stubEnv("NODE_ENV", nodeEnv);
-  }
+  vi.stubEnv("NODE_ENV", nodeEnv);
   return import("./catalogue");
 };
 
