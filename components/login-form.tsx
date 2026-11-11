@@ -91,6 +91,7 @@ export const LoginForm = ({
               id="email"
               placeholder="m@example.com"
               required
+              spellCheck={false}
               type="email"
             />
             <FieldError errors={[errors.email]} />
