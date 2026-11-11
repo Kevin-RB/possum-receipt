@@ -7,10 +7,16 @@ import { CHAT_CATALOGUE } from "./catalogue";
  * so each case imports a fresh copy with the key it is about. A registry built
  * per request would hide the bug these pin: a provider that resolves differently
  * from the one the picker last saw.
+ *
+ * `nodeEnv` defaults to `"test"` rather than inheriting the ambient value: a
+ * shell or container that exports `NODE_ENV=development` would otherwise flip
+ * every keyed case to the dev registry, failing assertions that describe a
+ * deployment. A case that is about the gate passes `"development"` itself.
  */
-const load = (apiKey: string) => {
+const load = (apiKey: string, nodeEnv: "development" | "test" = "test") => {
   vi.resetModules();
   vi.stubEnv("OPENROUTER_API_KEY", apiKey);
+  vi.stubEnv("NODE_ENV", nodeEnv);
   return import("./catalogue");
 };
 
@@ -114,12 +120,37 @@ describe("chat catalogue", () => {
     ).toBeNull();
   });
 
-  it("refuses a local selection when a remote key resolves, since local is absent", async () => {
-    const catalogue = await load("sk-test");
+  it("refuses a local selection when a remote key resolves outside development", async () => {
+    const catalogue = await load("sk-test", "test");
 
     expect(
       catalogue.resolveChatModel({ model: LOCAL_MODEL, provider: "local" })
     ).toBeNull();
+  });
+
+  it("offers local beside the remote entry in development, remote still first", async () => {
+    // The one case the default must not move: a development run with a key
+    // starts on the remote model and can switch to local without unsetting the
+    // key, which is what makes the two comparable in one sitting.
+    const catalogue = await load("sk-test", "development");
+
+    expect(Object.keys(catalogue.chatProviders)).toStrictEqual([
+      "openrouter",
+      "local",
+    ]);
+    expect(catalogue.chatSelections()).toStrictEqual([
+      { model: REMOTE_MODELS[0], provider: "openrouter" },
+      { model: LOCAL_MODEL, provider: "local" },
+    ]);
+    expect(catalogue.resolveChatModel()?.id).toBe(
+      `openrouter/${REMOTE_MODELS[0]}`
+    );
+    expect(
+      catalogue.resolveChatModel({ model: LOCAL_MODEL, provider: "local" })
+    ).toMatchObject({
+      id: `local/${LOCAL_MODEL}`,
+      selection: { model: LOCAL_MODEL, provider: "local" },
+    });
   });
 
   it("refuses an unknown model, an unknown provider and a malformed selection", async () => {
