@@ -11,6 +11,7 @@ import type {
   TooltipValueType,
 } from "recharts";
 
+import { ChartDataList } from "@/components/overview/chart-data-list";
 import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
 import { DrilldownPanel } from "@/components/overview/drilldown-panel";
 import { useChartDrilldown } from "@/components/overview/use-chart-drilldown";
@@ -149,7 +150,7 @@ export const MerchantSpendingChart = ({
               className="aspect-auto h-80 w-full sm:h-75"
               config={chartConfig}
             >
-              <PieChart>
+              <PieChart accessibilityLayer>
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
@@ -187,6 +188,13 @@ export const MerchantSpendingChart = ({
                 />
               </PieChart>
             </ChartContainer>
+            <ChartDataList
+              data={data}
+              nameOf={(datum) => datum.label}
+              onSelect={toggle}
+              selected={selected}
+              title="Spending by merchant"
+            />
             {drilldown ? <DrilldownPanel drilldown={drilldown} /> : null}
           </>
         )}

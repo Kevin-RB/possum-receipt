@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import type { BarShapeProps } from "recharts";
 
+import { ChartDataList } from "@/components/overview/chart-data-list";
 import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
 import { DrilldownPanel } from "@/components/overview/drilldown-panel";
 import { useChartDrilldown } from "@/components/overview/use-chart-drilldown";
@@ -159,6 +160,13 @@ export const CategorySpendingChart = ({
                 />
               </BarChart>
             </ChartContainer>
+            <ChartDataList
+              data={data}
+              nameOf={(datum) => datum.label}
+              onSelect={toggle}
+              selected={selected}
+              title="Spending by category"
+            />
             {drilldown ? <DrilldownPanel drilldown={drilldown} /> : null}
           </>
         )}
