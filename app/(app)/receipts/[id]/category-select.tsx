@@ -17,7 +17,14 @@ import {
 } from "@/lib/category/options";
 
 interface CategorySelectProps {
+  /** The rendered error element, when the field has one. */
+  describedBy: string | undefined;
   groups: CategoryOptionGroup[];
+  /** The trigger's id, so the field's visible label can point at it. */
+  id: string;
+  invalid: boolean;
+  /** The id of the visible field label, which names the trigger. */
+  labelledBy: string;
   onValueChange: (value: string | null) => void;
   value: string;
 }
@@ -28,7 +35,11 @@ interface CategorySelectProps {
  * signal that a human decision is still outstanding.
  */
 export const CategorySelect = ({
+  describedBy,
   groups,
+  id,
+  invalid,
+  labelledBy,
   onValueChange,
   value,
 }: CategorySelectProps) => (
@@ -42,7 +53,13 @@ export const CategorySelect = ({
     onValueChange={onValueChange}
     value={value}
   >
-    <SelectTrigger aria-label="Category" className="w-full">
+    <SelectTrigger
+      aria-describedby={describedBy}
+      aria-invalid={invalid}
+      aria-labelledby={labelledBy}
+      className="w-full"
+      id={id}
+    >
       <SelectValue />
     </SelectTrigger>
     <SelectContent>
