@@ -71,6 +71,11 @@
   --chart-3: oklch(0.648 0.2 131.684);
   --chart-4: oklch(0.532 0.157 131.589);
   --chart-5: oklch(0.453 0.124 130.933);
+  /* The overview rail's thumb. `--chart-1` is a highlight, not an indicator: on
+     the white card it is 1.30:1, and the strip's scrollbar is hidden, so the
+     rail is the only cue that it scrolls (WCAG 1.4.11 wants 3:1). `--chart-4`
+     is the same green family at 4.98:1 on the card and 3.98:1 on the track. */
+  --chart-rail: var(--chart-4);
   --radius: 0.45rem;
   /* Tailwind's built-in curves are too weak to read as deliberate. These are
      the only two the app uses: `ease-out` for anything entering or leaving,
@@ -114,6 +119,9 @@
   --chart-3: oklch(0.648 0.2 131.684);
   --chart-4: oklch(0.532 0.157 131.589);
   --chart-5: oklch(0.453 0.124 130.933);
+  /* The dark card is the surface `--chart-1` was drawn against: 13.33:1 on the
+     card, 9.98:1 on the track. */
+  --chart-rail: var(--chart-1);
   --sidebar: oklch(0.218 0.008 223.9);
   --sidebar-foreground: oklch(0.987 0.002 197.1);
   --sidebar-primary: oklch(0.768 0.233 130.85);
@@ -131,6 +139,22 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* A heading that breaks one long line before a short one reads as an accident,
+     and a paragraph that ends on a single orphaned word reads as a mistake.
+     Deliberately not `*`: `balance` is a binary search and `pretty` looks back
+     over several lines, so both would be paid on every element and gained on
+     almost none. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
   html {
     @apply font-sans;
 
@@ -160,15 +184,23 @@
     -webkit-user-select: none;
     user-select: none;
   }
+}
 
-  /* iOS zooms the page when a field under 16px takes focus and never zooms
-     back, which is the real reason `maximum-scale` gets reached for. */
-  @media (pointer: coarse) {
-    input,
-    select,
-    textarea {
-      font-size: 16px;
-    }
+/* iOS zooms the page when a field under 16px takes focus and never zooms back,
+   which is the real reason `maximum-scale` gets reached for. `max()` holds that
+   16px floor while still following the reader's root font size once they have
+   raised it past the default.
+
+   Unlayered on purpose, not inside `@layer base`. Layers outrank specificity, so
+   from the base layer shadcn's `md:text-sm` won at 768px and up — and a landscape
+   phone is exactly that wide, so every field this rule exists for still zoomed.
+   Outside the layers it applies on a coarse pointer and nowhere else, which is
+   what keeps a desktop field on `md:text-sm`'s 14px. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: max(1rem, 16px);
   }
 }
 
@@ -180,6 +212,22 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* A landscape iPhone puts the notch over a side edge, so the horizontal insets
+   matter as much as the top one. `max()` keeps the padding the shell already had
+   on a device that reports no inset, rather than letting `env()` resolve to zero
+   and collapse it. */
+@utility px-safe-4 {
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+}
+
+/* The content area pads nothing of its own on a normal device — every page
+   brings its own horizontal padding — so here the inset is the whole value. */
+@utility px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
 /* Relative bar behind a category total, sized by the share passed in as the
    `--share` custom property by `components/chat/agent-steps.tsx`. Kept here
    rather than as a utility because the value is only known at runtime. */
@@ -189,7 +237,12 @@
 
 /* Marks work that is genuinely in flight — a running tool call, a pending
    question. Fades the label in and out so a slow query reads as "working"
-   rather than as a finished answer with no data. */
+   rather than as a finished answer with no data.
+
+   The static state is the reduced-motion one: held at the fade's midpoint,
+   which still reads as in flight. The animation is opted into rather than
+   declared for everyone and cancelled with `animation: none`, so a reduced
+   motion preference costs no compositing at all. */
 @keyframes shimmer {
   0%,
   100% {
@@ -201,7 +254,110 @@
 }
 
 .shimmer {
-  animation: shimmer 1.6s ease-in-out infinite;
+  opacity: 0.6;
+
+  @media (prefers-reduced-motion: no-preference) {
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+}
+
+/* The upload's indeterminate bar: a short segment sliding along the bottom edge
+   of the drop zone while a receipt is compressed, uploaded or processed. It is a
+   native <progress> with no `value`, styled per the modern-web-guidance
+   `progress` guide: `appearance: none` to opt into custom styling, one rule per
+   browser pseudo-element (grouping -webkit- and -moz- makes the rule invalid),
+   and the indeterminate motion routed through custom properties on the element
+   so the state rules stay declarative.
+
+   Contrast (WCAG 2.x, fill against the card it sits on and the track):
+     light  fill --chart-rail #4b7d00 vs card #fff        4.96:1
+            fill vs track --border #e3e7e8                3.98:1
+     dark   fill --chart-rail #bbf451 vs card #161b1d    13.38:1
+            fill vs track (10% white over the card)       10.00:1
+   --primary was the first candidate, but in light mode it is 1.54:1 against the
+   white card — a lime sliver that reads as an empty track. --chart-rail is the
+   token the overview chart rail already pairs per theme for a thin indicator. */
+.upload-progress {
+  /* Public knobs, set on the element so a caller never has to know about
+     :indeterminate. */
+  --upload-progress-fill: var(--chart-rail);
+  --upload-progress-track: var(--border);
+  --upload-progress-indeterminate-size: 30%;
+  --upload-progress-indeterminate-duration: 1.5s;
+
+  appearance: none;
+  border: 0 solid;
+  /* Clips the segment to the element's box, so no border-radius is needed on
+     the fill itself. */
+  overflow: clip;
+  /* Track: the same background spans the element's full inline size, which is
+     why the caller gives this a definite width (`inset-x` alone does not
+     stretch a <progress>, and `100cqi` measures exactly this box). */
+  block-size: 3px;
+  background: var(--upload-progress-track);
+  /* Lets the fill express its position in track units (cqi). */
+  container-type: inline-size;
+
+  /* Reduced motion slows the segment down instead of stopping it: `animation:
+     none` leaves a zero-width fill in Chromium. */
+  @media (prefers-reduced-motion: reduce) {
+    --upload-progress-indeterminate-duration: 10s;
+  }
+}
+
+/* Let the element's own background be the track. */
+.upload-progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+/* Blink and WebKit fill. */
+.upload-progress::-webkit-progress-value {
+  background: var(--upload-progress-fill);
+  animation: var(--upload-progress-animation, revert-rule);
+}
+
+/* Firefox fill — its own rule, never grouped with the -webkit- one. */
+.upload-progress::-moz-progress-bar {
+  background: var(--upload-progress-fill);
+  animation: var(--upload-progress-animation, revert-rule);
+}
+
+/* Indeterminate: the segment exists only through this animation. */
+.upload-progress:indeterminate {
+  --upload-progress-animation: var(
+    --upload-progress-indeterminate-animation,
+    upload-progress-indeterminate var(--upload-progress-indeterminate-duration)
+      infinite linear
+  );
+}
+
+/* Mirror the motion in RTL, as Chrome's native bar does. */
+.upload-progress:dir(rtl) {
+  --upload-progress-animation: var(
+    --upload-progress-indeterminate-animation,
+    upload-progress-indeterminate var(--upload-progress-indeterminate-duration)
+      infinite linear reverse
+  );
+}
+
+/* Physical left to right in every direction. `translate` percentages resolve
+   against the segment's own width, so positions are given in track units
+   (cqi); `margin-right: auto` pins the segment to the physical left, which is
+   where Chromium would otherwise miss it in RTL. */
+@keyframes upload-progress-indeterminate {
+  from,
+  to {
+    inline-size: var(--upload-progress-indeterminate-size);
+    margin-right: auto;
+  }
+
+  from {
+    translate: -100%;
+  }
+
+  to {
+    translate: 100cqi;
+  }
 }
 
 /* Entrance for a surface that replaces another one — the chat's empty state
@@ -345,24 +501,27 @@
 
 /* How much of the strip is on screen, and where. A phone has no scrollbar to
    answer that, and a three-month strip is around ten screens wide — the fade
-   says "more", this says "how much more". */
+   says "more", this says "how much more". Tall enough to be a shape rather than
+   a hairline: at 3px the thumb was easy to mistake for a rule under the chart. */
 .overview-chart-rail {
   position: relative;
-  height: 3px;
+  height: 4px;
   margin-top: 8px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--border);
 }
 
-/* In the chart's own colour, so the rail reads as part of the chart rather than
-   as one more hairline rule under it. */
+/* In the chart's own colour family, so the rail reads as part of the chart
+   rather than as one more hairline rule under it. Which green is the theme's
+   call: `--chart-rail` is `--chart-4` in light and `--chart-1` in dark, because
+   the light card needs the darker one to clear 3:1. */
 .overview-chart-thumb {
   position: absolute;
   top: 0;
   bottom: 0;
   border-radius: inherit;
-  background: var(--chart-1);
+  background: var(--chart-rail);
 }
 
 @media (width < 40rem) {
@@ -480,11 +639,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shimmer {
-    animation: none;
-    opacity: 0.6;
-  }
-
   /* Gentler, not gone: the fade still marks the change, the movement does not.
      The accordion gives up its height transition entirely — a box that grows
      over 200ms is the movement, and there is no fade worth keeping. */
