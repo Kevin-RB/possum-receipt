@@ -316,7 +316,11 @@ export const ImageUploadCard = ({
                     aria-disabled={isBusy}
                     aria-busy={isBusy}
                     aria-describedby={busyLabel ? statusId : undefined}
-                    aria-label="Upload a receipt image"
+                    // No `aria-label`: the name is the copy inside the button,
+                    // so a voice-control user can say what they see (WCAG
+                    // 2.5.3). Exactly one of the two sentences below is
+                    // rendered — each is a `display: none` breakpoint pair, not
+                    // `sr-only` — so the name is never doubled.
                     className={cn(
                       "border-border bg-card hover:border-accent hover:bg-muted flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-none border-2 border-dashed transition-colors",
                       preview ? "p-2" : "p-8",

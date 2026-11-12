@@ -27,7 +27,10 @@ const realtime: ReceiptsRealtimeValue = {
   error: null,
 };
 
-const dropZone = () => screen.getByLabelText("Upload a receipt image");
+// The drop zone is named by its own copy while idle and by the preview's alt
+// text once a receipt is picked, so the query covers both states.
+const dropZone = () =>
+  screen.getByRole("button", { name: /drag and drop|receipt preview/iu });
 
 const elsewhere = () => screen.getByRole("button", { name: "Elsewhere" });
 

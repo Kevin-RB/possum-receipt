@@ -7,7 +7,7 @@ import { ImageUploadCard } from "./image-upload-card";
 
 const BUSY_LABEL = "Engraving data in stone…";
 
-const dropZone = () => screen.getByLabelText("Upload a receipt image");
+const dropZone = () => screen.getByRole("button", { name: /drag and drop/iu });
 
 const fileInput = () => screen.getByLabelText("Upload receipt image");
 
@@ -16,6 +16,21 @@ const cameraInput = () => screen.getByLabelText("Take a photo of a receipt");
 const chooseImage = () => screen.getByRole("button", { name: "Choose image" });
 
 describe(ImageUploadCard, () => {
+  it("takes its accessible name from its visible copy", () => {
+    render(<ImageUploadCard />);
+
+    // WCAG 2.5.3: no `aria-label`, so the name is the copy a voice-control user
+    // can read. jsdom applies no Tailwind, so both breakpoint sentences are
+    // present here; in a browser each is `display: none` at the other
+    // breakpoint, and neither is `sr-only`, so exactly one survives.
+    const button = screen.getByRole("button", { name: /drag and drop/iu });
+
+    expect(button.hasAttribute("aria-label")).toBeFalsy();
+    expect(button.textContent).toMatch(/click to browse or drag and drop/iu);
+    expect(button.textContent).toMatch(/take a photo or choose one below/iu);
+    expect(button.querySelector(".sr-only")).toBeNull();
+  });
+
   it("keeps focus on the upload button while it is busy", () => {
     const { rerender } = render(<ImageUploadCard />);
     const button = dropZone();
