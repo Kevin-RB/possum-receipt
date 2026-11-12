@@ -10,12 +10,17 @@ import { receiptZone } from "@/lib/receipt/zone-caption";
  * the stored row, so correcting the zone or the time updates it before the
  * save; the time itself is not restated, because the field above already says
  * it in the paper's own words.
+ *
+ * `id` is optional because a caption that is a description for a nearby control
+ * needs one, and one that is simply read in place (the detail page) does not.
  */
 export const ReceiptZoneCaption = ({
+  id,
   viewerZone,
   wallClock,
   zone,
 }: {
+  id?: string;
   viewerZone: string;
   wallClock: string | undefined;
   zone: string | undefined;
@@ -31,7 +36,7 @@ export const ReceiptZoneCaption = ({
   }
 
   return (
-    <span className="text-muted-foreground mt-1 block text-xs">
+    <span className="text-muted-foreground mt-1 block text-xs" id={id}>
       Added from {caption.label}
       {caption.viewerTime ? (
         <span className="block">{caption.viewerTime}</span>

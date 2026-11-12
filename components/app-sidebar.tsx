@@ -52,19 +52,30 @@ export const AppSidebar = () => {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    render={<Link href={item.url} />}
-                    // Exact match, not `startsWith`: the chat's URL is `/`, and
-                    // a prefix test would mark it active on every route.
-                    isActive={pathname === item.url}
-                  >
-                    <item.icon />
-                    {item.title}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {navItems.map((item) => {
+                // Exact match, not `startsWith`: the chat's URL is `/`, and a
+                // prefix test would mark it active on every route.
+                const isActive = pathname === item.url;
+
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      // Generated primitives only set `data-active`, which is
+                      // styling. Assistive technology needs the real attribute.
+                      render={
+                        <Link
+                          aria-current={isActive ? "page" : undefined}
+                          href={item.url}
+                        />
+                      }
+                      isActive={isActive}
+                    >
+                      <item.icon />
+                      {item.title}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

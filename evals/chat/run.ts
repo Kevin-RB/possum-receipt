@@ -6,12 +6,13 @@ import { eq } from "drizzle-orm";
 import { LM_STUDIO_URL } from "@/lib/ai/provider";
 import type { ChatAgent } from "@/lib/chat/agent";
 import { createChatAgent, MAX_STEPS } from "@/lib/chat/agent";
-import { resolveChatModel } from "@/lib/chat/catalogue";
+import { resolveChatModel, resolveLocalChatModel } from "@/lib/chat/catalogue";
 import { db } from "@/lib/db";
 import { FIXTURE_EMAIL } from "@/lib/db/fixture";
 import { user } from "@/lib/db/schema/auth";
 import { DEFAULT_TIMEZONE, resolveToday } from "@/lib/time";
 
+import { EvalUsageError, parseEvalArgs } from "./args";
 import type {
   Check,
   CheckResult,
@@ -26,6 +27,12 @@ import { describeToolCalls, expectNoRunaway, scenarios } from "./scenarios";
  * fixture owner) and a model — LM Studio, or OpenRouter through the catalogue —
  * so it is never part of CI. Each scenario runs several times because a model
  * is flaky: the output is a pass rate, not a single verdict.
+ *
+ * `--local` runs the catalogue's local entry instead of the default. Without it
+ * a keyed `.env.local` makes every run remote, so comparing the two ends of the
+ * range meant unsetting the key; with it, the local model costs nothing to
+ * measure. Unknown flags are refused rather than ignored, because a typo would
+ * otherwise start a full remote run and spend credit.
  *
  * The pass rate is **correctness**: the lookups the question needed, with the
  * arguments that make them right, and an answer that matches what they
@@ -268,14 +275,18 @@ const resolveOwnerId = async (): Promise<string> => {
 };
 
 const main = async () => {
+  const { local } = parseEvalArgs(process.argv.slice(2));
   const ownerId = await resolveOwnerId();
   // The same registry the route resolves through, so a model that passed the
-  // evals is the model a reader would have run.
-  const resolved = resolveChatModel();
+  // evals is the model a reader would have run. `--local` is the deliberate
+  // exception: it names a model the picker would not offer, to measure it.
+  const resolved = local ? resolveLocalChatModel() : resolveChatModel();
 
   if (!resolved) {
     throw new Error(
-      "The chat catalogue resolves no model. Set OPENROUTER_API_KEY or start LM Studio."
+      local
+        ? "The catalogue has no local entry to run."
+        : "The chat catalogue resolves no model. Set OPENROUTER_API_KEY or start LM Studio."
     );
   }
 
@@ -342,6 +353,15 @@ const main = async () => {
 
 try {
   await main();
+} catch (error) {
+  // A usage error is the caller's typo, not a crash: it already carries the
+  // reason and the usage block, so it prints without a stack trace.
+  if (!(error instanceof EvalUsageError)) {
+    throw error;
+  }
+
+  console.error(`${error.message}\n`);
+  process.exitCode = 1;
 } finally {
   await db.$client.end();
 }

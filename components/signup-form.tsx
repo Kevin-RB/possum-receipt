@@ -102,10 +102,11 @@ export const SignupForm = ({
             <Input
               {...register("email")}
               aria-invalid={!!errors.email}
-              autoComplete="email"
+              autoComplete="username"
               id="email"
               placeholder="m@example.com"
               required
+              spellCheck={false}
               type="email"
             />
             <FieldError errors={[errors.email]} />
@@ -114,12 +115,16 @@ export const SignupForm = ({
             <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
             <Input
               {...register("inviteCode")}
+              aria-describedby="inviteCode-description"
               aria-invalid={!!errors.inviteCode}
+              autoCapitalize="none"
               autoComplete="off"
+              autoCorrect="off"
               id="inviteCode"
               required
+              spellCheck={false}
             />
-            <FieldDescription>
+            <FieldDescription id="inviteCode-description">
               Enter the invite code you were given to create an account
             </FieldDescription>
             <FieldError errors={[errors.inviteCode]} />
@@ -129,6 +134,11 @@ export const SignupForm = ({
             <InputGroup>
               <InputGroupInput
                 {...register("password")}
+                aria-describedby={
+                  errors.password || errors.root
+                    ? "password-hint password-error"
+                    : "password-hint"
+                }
                 aria-invalid={!!errors.password}
                 autoComplete="new-password"
                 id="password"
@@ -149,7 +159,13 @@ export const SignupForm = ({
                 </InputGroupButton>
               </InputGroupAddon>
             </InputGroup>
-            <FieldError errors={[errors.password, errors.root]} />
+            <FieldDescription id="password-hint">
+              At least 8 characters.
+            </FieldDescription>
+            <FieldError
+              errors={[errors.password, errors.root]}
+              id="password-error"
+            />
           </Field>
           <Field>
             <Button disabled={isSubmitting} type="submit">

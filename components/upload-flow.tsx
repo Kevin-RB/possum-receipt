@@ -1,8 +1,12 @@
 "use client";
 
+import type { FocusEvent } from "react";
 import { useState } from "react";
 
-import { ReceiptToastNotifier } from "@/components/receipt-toast-notifier";
+import {
+  ReceiptToastNotifier,
+  resolveProgressLabel,
+} from "@/components/receipt-toast-notifier";
 import {
   useReceiptState,
   useReceiptsRealtime,
@@ -17,12 +21,39 @@ type UploadMachine =
   | { status: "requesting-url" }
   | { status: "uploading-to-storage" };
 
+/**
+ * Whether focus is inside the card right now, tracked from the wrapper so it
+ * survives the card being replaced below.
+ *
+ * A browser does not fire `focusout` when the focused element is removed from
+ * the document, so at the moment of the remount this still says `true` — which
+ * is exactly the case where focus has to be put back. Focus that moved
+ * somewhere else first is reported like any other blur, so nothing is stolen.
+ */
+const useFocusWithin = () => {
+  const [isFocusWithin, setIsFocusWithin] = useState(false);
+
+  return {
+    handleBlur: (event: FocusEvent<HTMLElement>) => {
+      const next = event.relatedTarget;
+      if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
+        setIsFocusWithin(false);
+      }
+    },
+    handleFocus: () => {
+      setIsFocusWithin(true);
+    },
+    isFocusWithin,
+  };
+};
+
 export const UploadFlow = () => {
   const [upload, setUpload] = useState<UploadMachine>({ status: "idle" });
   const [completedReceiptId, setCompletedReceiptId] = useState<string | null>(
     null
   );
-  const { connectionStatus, error } = useReceiptsRealtime();
+  const focusWithin = useFocusWithin();
+  const { error } = useReceiptsRealtime();
   const receiptId = upload.status === "done" ? upload.receiptId : null;
   const liveState = useReceiptState(receiptId ?? "");
   const state = liveState?.state;
@@ -41,11 +72,18 @@ export const UploadFlow = () => {
 
   return (
     <>
-      <Card className="w-full max-w-md">
+      <Card
+        className="w-full max-w-md"
+        onBlur={focusWithin.handleBlur}
+        onFocus={focusWithin.handleFocus}
+      >
         <CardContent>
           <ImageUploadCard
             key={uploadCardKey}
-            isProcessing={isProcessing}
+            autoFocusOnMount={focusWithin.isFocusWithin}
+            processingLabel={
+              isProcessing ? resolveProgressLabel(state) : undefined
+            }
             onUploadComplete={(id) =>
               setUpload({ receiptId: id, status: "done" })
             }
@@ -59,7 +97,6 @@ export const UploadFlow = () => {
       </Card>
       {upload.status === "done" && (
         <ReceiptToastNotifier
-          connectionStatus={connectionStatus}
           error={error}
           state={state}
           stateError={liveState?.error}

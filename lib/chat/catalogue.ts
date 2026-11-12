@@ -27,7 +27,9 @@ export type ChatProviderId = (typeof chatProviderIds)[number];
  * Ordered by input price ascending, with `local` last: it is the fallback when
  * no remote credential resolves, not a cheaper hosted option. The default is
  * the first entry whose provider is registered, so a deployment without a key
- * starts on `local` and one with a key starts on the cheapest remote model.
+ * starts on `local`, and one with a key starts on the cheapest remote model.
+ * A development run with a key offers `local` beneath the remote entries
+ * without moving the default — see `offersLocal`.
  *
  * Prices are a snapshot (2026-11-08) and are re-read before a promotion, as
  * ADR-0017 requires. The list is one remote model plus `local`: the price tail
@@ -79,16 +81,30 @@ const OPENROUTER_ROUTING = {
 type ProviderRegistration = (model: string) => LanguageModel;
 
 /**
+ * Whether `local` is listed. It always is when no remote key resolves, because
+ * then it is the only model there is. It is *also* listed beside a remote key
+ * in development, so both can be compared from one picker without unsetting the
+ * key and restarting — which is the only way to try a local change against each
+ * end of the range.
+ *
+ * A deployment keeps the single remote row: offering the weak local model to
+ * readers is the "quality lottery" ADR-0017 rejects, so the gate is `NODE_ENV`
+ * rather than the presence of the key, the same way `DEV_TIMEZONE` stands in for
+ * the edge in `lib/viewer.ts`.
+ */
+const offersLocal = (openRouterKey: string | undefined): boolean =>
+  !openRouterKey || process.env.NODE_ENV === "development";
+
+/**
  * Built once at module load. With one app-owned credential there is no
  * per-user key to isolate, and a singleton means the route, the evals and the
- * picker all resolve the same registry.
- *
- * `local` is registered only when no remote key resolves, so a deployment with
- * OpenRouter never silently serves the weak local model (ADR-0017).
+ * picker all resolve the same registry (ADR-0017).
  */
 const registerProviders = (
   openRouterKey: string | undefined
 ): Partial<Record<ChatProviderId, ProviderRegistration>> => {
+  const providers: Partial<Record<ChatProviderId, ProviderRegistration>> = {};
+
   if (openRouterKey) {
     // `strict` is the mode for OpenRouter's own API: the adapter sends
     // `stream_options.include_usage` only in it, so a `compatible` instance
@@ -98,12 +114,15 @@ const registerProviders = (
       apiKey: openRouterKey,
       compatibility: "strict",
     });
-    return {
-      openrouter: (model) => openrouter.chat(model, OPENROUTER_ROUTING),
-    };
+    providers.openrouter = (model) =>
+      openrouter.chat(model, OPENROUTER_ROUTING);
   }
 
-  return { local: (model) => lmstudio.chatModel(model) };
+  if (offersLocal(openRouterKey)) {
+    providers.local = (model) => lmstudio.chatModel(model);
+  }
+
+  return providers;
 };
 
 export const chatProviders = registerProviders(process.env.OPENROUTER_API_KEY);
@@ -129,6 +148,27 @@ export interface ResolvedChatModel {
   model: LanguageModel;
   selection: ChatSelection;
 }
+
+/**
+ * The catalogue's local entry, resolved whether or not this environment offers
+ * it. `pnpm eval:chat --local` is the only caller: the eval compares models, so
+ * it must be able to measure the local one while a remote key still resolves —
+ * which is exactly the selection `resolveChatModel` refuses, because a
+ * deployment must not serve that model to a reader.
+ */
+export const resolveLocalChatModel = (): ResolvedChatModel | null => {
+  const entry = CHAT_CATALOGUE.find(
+    (candidate) => candidate.provider === "local"
+  );
+
+  return entry
+    ? {
+        id: `${entry.provider}/${entry.model}`,
+        model: lmstudio.chatModel(entry.model),
+        selection: { model: entry.model, provider: "local" },
+      }
+    : null;
+};
 
 /**
  * A selection to the model the agent runs on, or `null` when the selection is

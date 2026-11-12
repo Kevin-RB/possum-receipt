@@ -136,6 +136,31 @@ export const Chat = ({
   const lastMessage = messages.at(-1);
   const pendingQuestion = findPendingQuestion(lastMessage);
 
+  // One polite status region for the whole conversation, mounted for the life
+  // of the page: a live region inserted together with its message is often not
+  // announced, and interstitial states such as "Thinking…" are deliberately
+  // silent, because announcing every step turns the transcript into a stream of
+  // interruptions. What a screen-reader user cannot see for themselves is that
+  // the answer has arrived, so that is what is said. The announcement is
+  // derived from a status change while rendering rather than in an effect: the
+  // idle status persists across renders, so the previous one is kept in state,
+  // and an effect would announce a frame after the transcript had settled.
+  const [previousStatus, setPreviousStatus] = useState(status);
+  const [announcement, setAnnouncement] = useState("");
+
+  if (status !== previousStatus) {
+    const wasBusy =
+      previousStatus === "submitted" || previousStatus === "streaming";
+    setPreviousStatus(status);
+    if (busy) {
+      // Cleared so the next completion is a change: a live region whose text
+      // is already identical announces nothing.
+      setAnnouncement("");
+    } else if (wasBusy) {
+      setAnnouncement(error ? chatErrorText(error) : "Answer ready");
+    }
+  }
+
   // The empty state's entrance is a bridge back from a conversation, not a page
   // entry animation: `/` is the front door, so arriving here is core navigation
   // and gets no motion. Adjusted during render rather than in an effect, the
@@ -167,6 +192,12 @@ export const Chat = ({
 
   return (
     <div className="flex h-full w-full flex-col">
+      {/* `<output>` is the native element for a status message: role="status"
+          is a polite, atomic live region, and it is here from the first render
+          rather than appearing alongside the text it announces. */}
+      <output aria-atomic="true" className="sr-only">
+        {announcement}
+      </output>
       {isEmpty ? (
         // A column, so the dev panel sits below the greeting instead of
         // competing with it for width on a phone.
@@ -245,7 +276,11 @@ export const Chat = ({
                       {status === "submitted" ? (
                         <MessageScrollerItem messageId="thinking">
                           <Trace>
-                            <TraceLine aria-live="polite" status="running">
+                            {/* No live region here: the transcript has one
+                                polite region of its own (above), and a
+                                "Thinking…" line that mounts with its own
+                                `aria-live` is usually never announced anyway. */}
+                            <TraceLine status="running">
                               <TraceIcon>
                                 <Leap size={14} />
                               </TraceIcon>
@@ -278,9 +313,10 @@ export const Chat = ({
 
           <div className="enter-rise mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 py-3">
             {error ? (
-              <p className="text-destructive text-xs" role="alert">
-                {chatErrorText(error)}
-              </p>
+              // Announced by the single polite status region above, so the
+              // visible copy here carries no `role="alert"` of its own — two
+              // regions saying the same sentence speak it twice.
+              <p className="text-destructive text-xs">{chatErrorText(error)}</p>
             ) : null}
             <PromptInput
               isBusy={busy}

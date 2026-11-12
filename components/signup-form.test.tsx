@@ -61,4 +61,40 @@ describe(SignupForm, () => {
       timezone: "America/Bogota",
     });
   });
+
+  it("shows the password rule before any interaction and links it to the input", () => {
+    render(<SignupForm />);
+
+    // Rendered on first paint, not revealed only once a rule is broken.
+    const hint = screen.getByText("At least 8 characters.");
+    const password = screen.getByLabelText("Password");
+
+    expect(hint.hidden).toBeFalsy();
+    expect(password.getAttribute("aria-describedby")).toContain(hint.id);
+  });
+
+  it("lets password managers fill the email and does not autocorrect it", () => {
+    render(<SignupForm />);
+
+    const email = screen.getByLabelText("Email");
+
+    expect(email.getAttribute("type")).toBe("email");
+    // `username` is the token password managers pair a credential with.
+    expect(email.getAttribute("autocomplete")).toBe("username");
+    expect(email.getAttribute("spellcheck")).toBe("false");
+  });
+
+  it("treats the invite code as an identifier and describes it", () => {
+    render(<SignupForm />);
+
+    const inviteCode = screen.getByLabelText("Invite code");
+    const description = screen.getByText(
+      "Enter the invite code you were given to create an account"
+    );
+
+    expect(inviteCode.getAttribute("aria-describedby")).toBe(description.id);
+    expect(inviteCode.getAttribute("autocapitalize")).toBe("none");
+    expect(inviteCode.getAttribute("autocorrect")).toBe("off");
+    expect(inviteCode.getAttribute("spellcheck")).toBe("false");
+  });
 });

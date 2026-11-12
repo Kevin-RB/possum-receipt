@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Camera, ImagePlusIcon } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -24,6 +24,31 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 type UploadStage = "requesting-url" | "uploading-to-storage";
+
+const UPLOAD_STAGE_LABEL: Record<UploadStage, string> = {
+  "requesting-url": "Starting the upload…",
+  "uploading-to-storage": "Uploading your receipt…",
+};
+
+/**
+ * One line, not one per percent: the reader gets the stage that is happening
+ * now, and the outcome arrives in the toast. The card shows it rather than a
+ * live region (accessibility guide §8); the busy control keeps focus and
+ * points `aria-describedby` here, so the stage is announced in place.
+ */
+const resolveBusyLabel = (input: {
+  isCompressing: boolean;
+  processingLabel: string | undefined;
+  stage: UploadStage | null;
+}): string | undefined => {
+  if (input.processingLabel !== undefined) {
+    return input.processingLabel;
+  }
+  if (input.isCompressing) {
+    return "Compressing your photo…";
+  }
+  return input.stage ? UPLOAD_STAGE_LABEL[input.stage] : undefined;
+};
 
 const UploadResponse = z.object({
   receiptId: z.string(),
@@ -105,14 +130,27 @@ const uploadReceipt = async (
 };
 
 export const ImageUploadCard = ({
+  autoFocusOnMount = false,
   className,
-  isProcessing = false,
+  processingLabel,
   onUploadComplete,
   onUploadError,
   onUploadStateChange,
 }: {
+  /**
+   * Focus the drop zone when this card mounts. The parent sets it when the
+   * card that was just replaced held focus — `UploadFlow` remounts the card to
+   * clear a finished receipt's preview, and a plain remount would otherwise
+   * drop focus to `<body>`.
+   */
+  autoFocusOnMount?: boolean;
   className?: string;
-  isProcessing?: boolean;
+  /**
+   * What to say while the uploaded receipt is being processed. Presence is
+   * also what makes the card busy: the parent owns the run, so it owns the
+   * wording (`resolveProgressLabel` in `receipt-toast-notifier`).
+   */
+  processingLabel?: string;
   onUploadComplete?: (receiptId: string) => void;
   onUploadError?: () => void;
   onUploadStateChange?: (stage: UploadStage) => void;
@@ -120,16 +158,28 @@ export const ImageUploadCard = ({
   const [preview, setPreview] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
+  const [stage, setStage] = useState<UploadStage | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const statusId = useId();
 
   const form = useForm<FormValues>({
     defaultValues: { receipt: undefined as File | undefined },
     mode: "onSubmit",
     resolver: zodResolver(formSchema),
   });
-  const isBusy = form.formState.isSubmitting || isCompressing || isProcessing;
+  const isBusy =
+    form.formState.isSubmitting ||
+    isCompressing ||
+    processingLabel !== undefined;
+
+  // A stage must not outlive the attempt that set it: a failed upload returns
+  // the card to idle with `stage` still holding the last phase, and the status
+  // line, the bar and both `aria-describedby`s all render from this label.
+  const busyLabel = isBusy
+    ? resolveBusyLabel({ isCompressing, processingLabel, stage })
+    : undefined;
 
   useEffect(
     () => () => {
@@ -140,19 +190,34 @@ export const ImageUploadCard = ({
     []
   );
 
+  const reportStage = (next: UploadStage) => {
+    setStage(next);
+    onUploadStateChange?.(next);
+  };
+
   const onSubmit = async (data: FormValues) => {
     try {
-      const receiptId = await uploadReceipt(data.receipt, onUploadStateChange);
+      const receiptId = await uploadReceipt(data.receipt, reportStage);
       onUploadComplete?.(receiptId);
     } catch (error) {
       onUploadError?.();
+      // The throw carries either catalogue wording from `failureMessage` or a
+      // diagnostic line of ours ("Failed to upload image to storage"), which is
+      // not ours to show. Only the former reaches the field. See ADR-0014.
       form.setError("receipt", {
-        message: error instanceof Error ? error.message : "Upload failed",
+        message:
+          error instanceof Error && isUserMessage(error.message)
+            ? error.message
+            : USER_ERROR.uploadFailed,
       });
     }
   };
 
   const handleFile = async (file: File) => {
+    if (isBusy) {
+      return;
+    }
+    setStage(null);
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
     }
@@ -229,61 +294,105 @@ export const ImageUploadCard = ({
             const { name, onBlur: handleBlur } = field;
             return (
               <Field data-invalid={fieldState.invalid}>
-                <button
-                  type="button"
-                  onClick={openCamera}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setIsDragOver(true);
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault();
-                    setIsDragOver(false);
-                  }}
-                  onDrop={handleDrop}
-                  disabled={isBusy}
-                  className={cn(
-                    "border-border bg-card hover:border-accent hover:bg-muted flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-none border-2 border-dashed transition-colors",
-                    preview ? "p-2" : "p-8",
-                    isDragOver && "border-primary bg-muted",
-                    isBusy && "cursor-not-allowed opacity-50"
-                  )}
-                >
-                  {preview ? (
-                    <div className="enter-rise relative h-[50vh] max-h-96 w-full">
-                      <Image
-                        src={preview}
-                        alt="Receipt preview"
-                        fill
-                        sizes="(min-width: 640px) 28rem, 100vw"
-                        className="object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      <Camera className="text-muted-foreground size-10 sm:hidden" />
-                      <ImagePlusIcon className="text-muted-foreground hidden size-10 sm:block" />
-                      <div className="flex flex-col items-center gap-1 text-center">
-                        <span className="text-xs font-medium sm:hidden">
-                          Take a photo or choose one below
-                        </span>
-                        <span className="hidden text-xs font-medium sm:inline">
-                          Click to browse or drag and drop
-                        </span>
+                {/* Holds the drop zone and the in-flight bar, so the bar can
+                    ride the drop zone's bottom edge without living inside the
+                    button (a button's descendants are presentational, so a
+                    progressbar there would never reach assistive tech). */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    // `autoFocus` is mount-only, so a later render does not pull
+                    // focus back off whatever the reader is on.
+                    autoFocus={autoFocusOnMount}
+                    onClick={openCamera}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragOver(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      setIsDragOver(false);
+                    }}
+                    onDrop={handleDrop}
+                    // Not `disabled`: that removes the control the reader just
+                    // activated from the focus order, so focus falls to <body>
+                    // mid-upload. `aria-disabled` keeps it, and the handlers
+                    // above refuse the activation instead.
+                    aria-disabled={isBusy}
+                    aria-busy={isBusy}
+                    aria-describedby={busyLabel ? statusId : undefined}
+                    // No `aria-label`: the name is the copy inside the button,
+                    // so a voice-control user can say what they see (WCAG
+                    // 2.5.3). Exactly one of the two sentences below is
+                    // rendered — each is a `display: none` breakpoint pair, not
+                    // `sr-only` — so the name is never doubled.
+                    className={cn(
+                      "border-border bg-card hover:border-accent hover:bg-muted flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-none border-2 border-dashed transition-colors",
+                      preview ? "p-2" : "p-8",
+                      isDragOver && "border-primary bg-muted",
+                      isBusy && "cursor-not-allowed opacity-50"
+                    )}
+                  >
+                    {preview ? (
+                      <div className="enter-rise relative h-[50vh] max-h-96 w-full">
+                        <Image
+                          src={preview}
+                          alt="Receipt preview"
+                          fill
+                          sizes="(min-width: 640px) 28rem, 100vw"
+                          className="object-contain"
+                        />
                       </div>
-                    </>
+                    ) : (
+                      <>
+                        <Camera className="text-muted-foreground size-10 sm:hidden" />
+                        <ImagePlusIcon className="text-muted-foreground hidden size-10 sm:block" />
+                        <div className="flex flex-col items-center gap-1 text-center">
+                          <span className="text-xs font-medium sm:hidden">
+                            Take a photo or choose one below
+                          </span>
+                          <span className="hidden text-xs font-medium sm:inline">
+                            Click to browse or drag and drop
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </button>
+                  {/* No `value`: indeterminate. Named by the stage text, never
+                      focusable, and mounted for as long as the stage row is, so
+                      the segment does not restart per stage.
+
+                      The width is explicit: an absolutely positioned
+                      <progress> keeps its UA intrinsic inline size (10em) even
+                      with `inset-x` on both sides, so the inset pair alone
+                      leaves a short bar in the corner. `left` + this width give
+                      the same 8px inset on both edges, in either direction. */}
+                  {busyLabel && (
+                    <progress
+                      aria-labelledby={statusId}
+                      className="upload-progress pointer-events-none absolute bottom-2 left-2 w-[calc(100%-1rem)]"
+                    />
                   )}
-                </button>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={openPicker}
-                  disabled={isBusy}
+                  aria-disabled={isBusy}
+                  aria-describedby={busyLabel ? statusId : undefined}
                   className="w-full sm:hidden"
                 >
                   <ImagePlusIcon data-icon="inline-start" />
                   Choose image
                 </Button>
+                {busyLabel && (
+                  <p
+                    className="shimmer text-muted-foreground text-sm"
+                    id={statusId}
+                  >
+                    {busyLabel}
+                  </p>
+                )}
                 {fieldState.invalid && (
                   <FieldError errors={[fieldState.error]} />
                 )}

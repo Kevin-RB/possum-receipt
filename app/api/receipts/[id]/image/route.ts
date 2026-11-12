@@ -55,6 +55,9 @@ export const GET = async (
     headers: {
       "Cache-Control": "private, max-age=300",
       "Content-Type": contentTypeFromKey(receipt.objectKey),
+      // The bytes are user-uploaded; without this a browser may sniff its way
+      // to a type the stored content type does not name.
+      "X-Content-Type-Options": "nosniff",
     },
   });
 };

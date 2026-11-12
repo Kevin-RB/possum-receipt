@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { Geist, IBM_Plex_Sans } from "next/font/google";
 
 import "./globals.css";
-import { Geist, IBM_Plex_Sans } from "next/font/google";
+import { headers } from "next/headers";
 
 import { ThemeColor } from "@/components/theme-color";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -40,25 +41,34 @@ export const viewport: Viewport = {
   width: "device-width",
 };
 
-const RootLayout = ({ children }: { children: React.ReactNode }) => (
-  <html
-    lang="en"
-    suppressHydrationWarning
-    className={cn("font-sans", ibmPlexSans.variable, geistHeading.variable)}
-  >
-    <body className="bg-background text-foreground">
-      <ThemeProvider
-        attribute="class"
-        enableSystem
-        defaultTheme="system"
-        disableTransitionOnChange
-      >
-        <ThemeColor />
-        {children}
-        <Toaster />
-      </ThemeProvider>
-    </body>
-  </html>
-);
+const RootLayout = async ({ children }: { children: React.ReactNode }) => {
+  // Minted per request by `proxy.ts`. Next reads the same policy to stamp its
+  // own scripts; `next-themes` renders an inline script of its own, and only
+  // the `nonce` prop reaches it.
+  const requestHeaders = await headers();
+  const nonce = requestHeaders.get("x-nonce") ?? undefined;
+
+  return (
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={cn("font-sans", ibmPlexSans.variable, geistHeading.variable)}
+    >
+      <body className="bg-background text-foreground">
+        <ThemeProvider
+          attribute="class"
+          enableSystem
+          defaultTheme="system"
+          disableTransitionOnChange
+          nonce={nonce}
+        >
+          <ThemeColor />
+          {children}
+          <Toaster />
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+};
 
 export default RootLayout;

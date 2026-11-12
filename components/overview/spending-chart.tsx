@@ -1,5 +1,14 @@
 "use client";
 
+/*
+ * The mobile spending strip is a scroll container: reaching it with the
+ * keyboard is the only way to pan it without a pointer, which WCAG 2.1.1 and
+ * axe's `scrollable-region-focusable` both ask for. `no-noninteractive-tabindex`
+ * does not allow that on a non-interactive element, so it is turned off for the
+ * one element in this file where the rule and the requirement disagree.
+ */
+/* eslint-disable jsx-a11y/no-noninteractive-tabindex -- a scroll strip must be focusable to be panned */
+
 import "temporal-polyfill/global";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef } from "react";
@@ -13,6 +22,7 @@ import {
 } from "recharts";
 import type { BarShapeProps } from "recharts";
 
+import { ChartDataList } from "@/components/overview/chart-data-list";
 import { ChartPeriodSelect } from "@/components/overview/chart-period-select";
 import { DrilldownPanel } from "@/components/overview/drilldown-panel";
 import { useChartDrilldown } from "@/components/overview/use-chart-drilldown";
@@ -80,7 +90,7 @@ export const SpendingChart = ({
   // can land on a run of empty days. So it opens around the most recent day
   // that actually has spending — the thing the reader came to look at — and the
   // browser clamps the scroll at either end.
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const strip = scrollRef.current;
     if (!strip) {
@@ -135,7 +145,17 @@ export const SpendingChart = ({
         />
       </CardHeader>
       <CardContent>
-        <div className="overview-chart-scroll" ref={scrollRef}>
+        {/*
+          Focusable on purpose: with the scrollbar hidden and the strip panning
+          sideways below `sm`, tabbing to it is the only way to pan the chart
+          without a pointer.
+        */}
+        <section
+          aria-label={`Spending by ${monthly ? "month" : "day"}, scrollable`}
+          className="overview-chart-scroll focus-visible:ring-ring/50 rounded-lg focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
+          ref={scrollRef}
+          tabIndex={0}
+        >
           <div
             className="overview-chart-inner"
             style={
@@ -208,7 +228,7 @@ export const SpendingChart = ({
               </BarChart>
             </ChartContainer>
           </div>
-        </div>
+        </section>
         <div
           aria-hidden
           className="overview-chart-rail sm:hidden"
@@ -216,6 +236,17 @@ export const SpendingChart = ({
         >
           <div className="overview-chart-thumb" />
         </div>
+        <ChartDataList
+          data={data}
+          nameOf={(datum) =>
+            monthly
+              ? formatMonthTooltipLabel(datum.label)
+              : formatDayTooltipLabel(datum.label)
+          }
+          onSelect={toggle}
+          selected={selected}
+          title="Spending"
+        />
         {drilldown ? <DrilldownPanel drilldown={drilldown} /> : null}
       </CardContent>
     </Card>
