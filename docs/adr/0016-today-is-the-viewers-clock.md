@@ -36,7 +36,7 @@ There is deliberately **no chat-only candidate**. An earlier version took the br
 
 ## Consequences
 
-- Nothing writes a cookie for this. The header is on the request, so a middleware that copied it into one would only be a second copy to keep in step — and `proxy.ts` is back to the single job it had before: the optimistic session gate.
+- Nothing writes a cookie for this. The header is on the request, so a middleware that copied it into one would only be a second copy to keep in step — and `proxy.ts` is back to the single job it had before: the optimistic session gate. (Superseded: `proxy.ts` also builds the per-request CSP; see the 2026-11-12 update below.)
 - **The page half depends on a Cloudflare Managed Transform.** `cf-timezone` is not a standard header: it only exists when the zone's **Add visitor location headers** transform is on (**Rules → Settings → Managed Transforms**). Off by default, per zone, and nothing in the repo can assert it. If it is off, nothing errors: every surface falls back to `user.timezone` and then Brisbane, together, so the app stays self-consistent — it is simply wrong about a traveller. The absence is worth one line in the log rather than none, so `lib/viewer.ts` warns once per process when a production request arrives without the header: from then on, "today" is the reader's home day. Enabled for `tribi.dev` (prod and staging); after a zone change, look for the `[viewer-timezone]` line in the app log — its absence means the header is arriving. The transform also sends nine other location headers to the origin.
 - The header is **IP-derived**, so it is where the request came from, not necessarily where the reader's clock is: a VPN, or a laptop left on home time, makes every surface agree on the wrong place rather than disagreeing. That is the deliberate trade: one answer everywhere beats an accurate one on each surface. "Today" for a number on a screen is cosmetic, not a report.
 - `user.timezone` is written once, at sign-up, and never updated. An account created before the column is `NULL` and reads as "no zone"; the header covers it on every request, so it is only stranded when the transform is off.
@@ -47,7 +47,12 @@ There is deliberately **no chat-only candidate**. An earlier version took the br
 - `RECEIPT_TIMEZONE` is now defined as `DEFAULT_TIMEZONE`: one literal, two names, because the home zone serves both "which zone did this value's printer mean" and "what zone is today's fallback". `browserTimezone()` names the `Intl` expression the sign-up form uses.
 - `proxy.ts` no longer imports `lib/time.ts`, so the middleware bundle no longer carries the Temporal polyfill. `browserTimezone` lives in its own import-free module (`lib/browser-timezone.ts`), so the sign-up client does not ship the polyfill to read one `Intl` property either.
 
+## Update (2026-11-12): `proxy.ts` also carries the CSP
+
+`proxy.ts` is no longer a single-job module. Alongside the optimistic session gate it mints one nonce per request and sets the report-only Content-Security-Policy on both the forwarded request and the response (ADR-0019). The decision recorded here is unchanged — nothing about "today" is read or written in the middleware, and it still does not import `lib/time.ts`.
+
 ## Related
 
 - ADR-0015 (receipts store the printed wall clock) — a receipt's day is stored data and does not depend on the viewer.
 - Issue #192 — the implementation.
+- ADR-0019 (security headers and report-only CSP) — the second job `proxy.ts` now has.

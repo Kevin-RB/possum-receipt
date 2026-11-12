@@ -174,7 +174,12 @@ export const ImageUploadCard = ({
     isCompressing ||
     processingLabel !== undefined;
 
-  const busyLabel = resolveBusyLabel({ isCompressing, processingLabel, stage });
+  // A stage must not outlive the attempt that set it: a failed upload returns
+  // the card to idle with `stage` still holding the last phase, and the status
+  // line, the bar and both `aria-describedby`s all render from this label.
+  const busyLabel = isBusy
+    ? resolveBusyLabel({ isCompressing, processingLabel, stage })
+    : undefined;
 
   useEffect(
     () => () => {

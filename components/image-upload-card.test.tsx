@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { USER_ERROR } from "@/lib/errors";
+
 import { ImageUploadCard } from "./image-upload-card";
+
+// jsdom cannot decode an image; the upload is what is under test, not the
+// compression, so the file passes through unchanged.
+vi.mock(import("@/lib/images/compress-receipt-image"), () => ({
+  compressReceiptImage: (file: File) => Promise.resolve(file),
+}));
 
 const BUSY_LABEL = "Engraving data in stone…";
 
@@ -137,6 +145,51 @@ describe(ImageUploadCard, () => {
     render(<ImageUploadCard />);
 
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it("clears the stage when an upload fails", async () => {
+    // The failure path has no remount to hide a stale stage behind, unlike a
+    // finished upload, so the card itself has to stop reporting one.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          Response.json({ error: "nope" }, { status: 500 }) as Response
+        )
+      )
+    );
+    // jsdom has no object URLs, so there is nothing for `vi.spyOn` to wrap; the
+    // preview is not what is under test.
+    Object.assign(URL, {
+      createObjectURL: () => "blob:preview",
+      revokeObjectURL: () => {},
+    });
+    const onUploadError = vi.fn<() => void>();
+    const { unmount } = render(
+      <ImageUploadCard onUploadError={onUploadError} />
+    );
+
+    fireEvent.change(fileInput(), {
+      target: { files: [new File(["x"], "r.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => expect(onUploadError).toHaveBeenCalledOnce());
+    // The drop zone now holds the preview, so its name is the image's; the
+    // picker button carries the same busy wiring and keeps its name.
+    await waitFor(() =>
+      expect(chooseImage().getAttribute("aria-disabled")).toBe("false")
+    );
+    expect(screen.getByText(USER_ERROR.uploadFailed)).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByText("Starting the upload…")).toBeNull();
+    expect(chooseImage().hasAttribute("aria-describedby")).toBeFalsy();
+
+    // Unmount before removing the stubs: the card revokes its preview URL on
+    // unmount.
+    unmount();
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(URL, "createObjectURL");
+    Reflect.deleteProperty(URL, "revokeObjectURL");
   });
 
   it("leaves the button described by nothing when idle", () => {
