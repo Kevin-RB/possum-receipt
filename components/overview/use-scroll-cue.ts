@@ -24,7 +24,8 @@ const EDGE_SLOP = 4;
  * would re-render the chart on every frame.
  */
 export const useScrollCue = (
-  stripRef: RefObject<HTMLDivElement | null>,
+  /** The scroller: a `section`, because a named one is a region landmark. */
+  stripRef: RefObject<HTMLElement | null>,
   railRef: RefObject<HTMLDivElement | null>
 ) => {
   useEffect(() => {

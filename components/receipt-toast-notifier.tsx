@@ -1,104 +1,65 @@
 "use client";
 
-import type { UseRealtimeConnectionStatus } from "inngest/react";
-import { CircleCheckIcon, Loader2Icon, OctagonXIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import {
-  Toast,
-  ToastClose,
-  ToastContent,
-  ToastDescription,
-  ToastPortal,
-  ToastProvider,
-  ToastTitle,
-  ToastViewport,
-  createToastManager,
-  useToastManager,
-} from "@/components/ui/toast";
+import { toast } from "@/components/ui/toast";
+import { isUserMessage, USER_ERROR } from "@/lib/errors";
 import type { ReceiptState } from "@/lib/inngest/channels";
 
-const receiptToastManager = createToastManager();
-
-const TOP_VIEWPORT_CLASS =
-  "top-4 bottom-auto sm:right-4 sm:left-4 sm:mx-auto sm:w-auto";
-
-const TOP_TOAST_CLASS =
-  "top-0 bottom-auto left-0 origin-top [--offset-y:calc(var(--toast-offset-y)+(var(--toast-index)*var(--gap))+var(--toast-swipe-movement-y))] [transform:translateX(var(--toast-swipe-movement-x))_translateY(calc(var(--toast-swipe-movement-y)+(var(--toast-index)*var(--peek))+(var(--shrink)*var(--height))))_scale(var(--scale))] after:bottom-full after:top-auto data-starting-style:[transform:translateY(-150%)] [&[data-ending-style]:not([data-limited]):not([data-swipe-direction])]:[transform:translateY(-150%)]";
-
-const TOAST_ICONS = {
-  error: { Icon: OctagonXIcon, className: "text-destructive" },
-  loading: { Icon: Loader2Icon, className: "animate-spin" },
-  success: { Icon: CircleCheckIcon, className: undefined },
-} as const;
-
-const ReceiptToastIcon = ({ type }: { type: string | undefined }) => {
-  if (type !== "error" && type !== "loading" && type !== "success") {
-    return null;
-  }
-
-  const { className, Icon } = TOAST_ICONS[type];
-
-  return (
-    <span className="shrink-0 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4">
-      <Icon aria-hidden="true" className={className} />
-    </span>
-  );
-};
-
-const ReceiptToastList = () => {
-  const { toasts } = useToastManager();
-
-  return toasts.map((toastItem) => (
-    <Toast
-      key={toastItem.id}
-      toast={toastItem}
-      swipeDirection="up"
-      className={TOP_TOAST_CLASS}
-    >
-      <ToastContent>
-        <ReceiptToastIcon type={toastItem.type} />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <ToastTitle />
-          <ToastDescription />
-        </div>
-        <ToastClose />
-      </ToastContent>
-    </Toast>
-  ));
-};
-
-const ReceiptToaster = () => (
-  <ToastProvider toastManager={receiptToastManager}>
-    <ToastPortal>
-      <ToastViewport className={TOP_VIEWPORT_CLASS}>
-        <ReceiptToastList />
-      </ToastViewport>
-    </ToastPortal>
-  </ToastProvider>
-);
-
-interface ToastBody {
+/** What a toast says, and how long it stays. */
+export interface ToastBody {
   description: string;
   timeout: number;
   title: string;
-  type: "error" | "loading" | "success";
+  type: "error" | "success";
 }
 
+/**
+ * The stage the upload card shows while the run is in flight. Deliberately not
+ * a live region: progress you can read on the page you are already on does not
+ * need announcing, and the button keeps focus, so the stage travels with it.
+ */
+export const resolveProgressLabel = (state?: ReceiptState): string => {
+  switch (state) {
+    case "storing": {
+      return "Engraving data in stone…";
+    }
+    case "extracting": {
+      return "Gnomes are extracting data…";
+    }
+    case "parsing": {
+      return "A magic cat is taking a look at your receipt…";
+    }
+    default: {
+      return "Waiting for the server…";
+    }
+  }
+};
+
+/**
+ * What, if anything, the reader should be told right now.
+ *
+ * Both error strings here cross a boundary the app does not own: `error` comes
+ * from the realtime transport and `stateError` from the stored result of an
+ * Inngest run. Either may be a provider message, a stack line or a status
+ * code, so only catalogue wording is passed through; the rest collapses to
+ * `USER_ERROR.generic`. See ADR-0014.
+ */
 export const resolveToastBody = (input: {
-  connectionStatus: UseRealtimeConnectionStatus;
   error: Error | null;
   state: ReceiptState | undefined;
   stateError: string | undefined;
-}): ToastBody => {
-  const { connectionStatus, error, state, stateError } = input;
+}): ToastBody | null => {
+  const { error, state, stateError } = input;
 
   // A socket drop must not replace a toast that already reports the outcome:
   // once the receipt is done or failed, the stored result is what the owner
   // needs to see, not a sticky connection error about a run that finished.
   if (error && state !== "done" && state !== "failed") {
     return {
-      description: error.message,
+      description: isUserMessage(error.message)
+        ? error.message
+        : USER_ERROR.generic,
       timeout: 0,
       title: "Connection error",
       type: "error",
@@ -116,57 +77,36 @@ export const resolveToastBody = (input: {
     }
     case "failed": {
       return {
-        description: stateError ?? "An unknown error occurred",
+        description:
+          stateError && isUserMessage(stateError)
+            ? stateError
+            : USER_ERROR.generic,
         timeout: 0,
         title: "Processing failed",
         type: "error",
       };
     }
-    case "storing": {
-      return {
-        description: "Engraving data in stone",
-        timeout: 0,
-        title: "Storing",
-        type: "loading",
-      };
-    }
-    case "extracting": {
-      return {
-        description: "Gnomes are extrating data",
-        timeout: 0,
-        title: "Extraction",
-        type: "loading",
-      };
-    }
-    case "parsing": {
-      return {
-        description: "A magic cat is taking a look at your receipt",
-        timeout: 0,
-        title: "Understanding",
-        type: "loading",
-      };
-    }
     default: {
-      break;
+      // In flight, or waiting for the first stage: the card carries it.
+      return null;
     }
   }
-
-  return {
-    description:
-      connectionStatus === "open" ? "Connected" : "Waiting for server...",
-    timeout: 0,
-    title: "Upload complete",
-    type: "loading",
-  };
 };
 
+/**
+ * Reports the outcome of one upload — a finished receipt, a failed run, or a
+ * dropped socket — in the app's single toast region.
+ *
+ * Only an outcome is news: nothing is written while the run is merely
+ * progressing. The stages are shown by the upload card (`resolveProgressLabel`
+ * feeds its status), so the one polite live region never announces an
+ * interstitial "Loading…". See the accessibility guide, §8.
+ */
 export const ReceiptToastNotifier = ({
-  connectionStatus,
   error,
   state,
   stateError,
 }: {
-  connectionStatus: UseRealtimeConnectionStatus;
   error: Error | null;
   state: ReceiptState | undefined;
   stateError: string | undefined;
@@ -175,41 +115,40 @@ export const ReceiptToastNotifier = ({
   const isTerminalRef = useRef(false);
 
   useEffect(() => {
-    const { description, timeout, title, type } = resolveToastBody({
-      connectionStatus,
-      error,
-      state,
-      stateError,
-    });
+    const body = resolveToastBody({ error, state, stateError });
 
     isTerminalRef.current = state === "done" || state === "failed";
 
-    if (toastIdRef.current) {
-      receiptToastManager.update(toastIdRef.current, {
-        description,
-        timeout,
-        title,
-        type,
-      });
-    } else {
-      toastIdRef.current = receiptToastManager.add({
-        description,
-        timeout,
-        title,
-        type,
-      });
+    if (!body) {
+      // Mid-flight, or a socket error that has since recovered: clear whatever
+      // this component put up, so a sticky "Connection error" cannot outlive
+      // the failure it reported.
+      if (toastIdRef.current) {
+        toast.close(toastIdRef.current);
+        toastIdRef.current = null;
+      }
+      return;
     }
-  }, [state, stateError, connectionStatus, error]);
+
+    if (toastIdRef.current) {
+      toast.update(toastIdRef.current, body);
+    } else {
+      toastIdRef.current = toast.add(body);
+    }
+  }, [state, stateError, error]);
 
   useEffect(
     () => () => {
       if (toastIdRef.current && !isTerminalRef.current) {
-        receiptToastManager.close(toastIdRef.current);
+        toast.close(toastIdRef.current);
         toastIdRef.current = null;
       }
     },
     []
   );
 
-  return <ReceiptToaster />;
+  // The app-wide `<Toaster />` in `app/layout.tsx` renders whatever this
+  // component puts in the shared manager, so there is no viewport — and no
+  // second live region — of its own.
+  return null;
 };

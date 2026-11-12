@@ -110,15 +110,28 @@ export const PromptInput = ({
         }}
       >
         <InputGroupTextarea
-          className="min-h-10"
+          // A placeholder is a hint, not a name: the composer still needs one
+          // of its own, and it changes with the route's copy.
+          aria-label="Message"
+          // The field grows with its content (`field-sizing-content`), so it
+          // needs a ceiling: ten lines, then it scrolls instead of pushing the
+          // send button off a phone screen.
+          className="max-h-[10lh] min-h-10 overflow-y-auto"
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
+            const { isComposing, keyCode } = event.nativeEvent;
             // `isComposing` guards against Enter firing mid-IME input, which
-            // would submit a half-typed Japanese or Chinese character.
+            // would submit a half-typed Japanese or Chinese character. Safari
+            // can deliver compositionend before the confirming keydown, which
+            // clears `isComposing`; an IME keystroke still reports
+            // `keyCode === 229` (VK_PROCESSKEY) instead of 13, so both are
+            // checked. `keyCode` is deprecated but has no replacement that
+            // catches this case.
             if (
               event.key === "Enter" &&
               !event.shiftKey &&
-              !event.nativeEvent.isComposing
+              !isComposing &&
+              keyCode !== 229
             ) {
               event.preventDefault();
               formRef.current?.requestSubmit();

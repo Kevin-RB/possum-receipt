@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -20,6 +20,20 @@ import {
 } from "@/lib/receipt/datetime";
 
 interface TransactionDateTimeFieldProps {
+  /**
+   * The id of the zone caption beneath the field, when one is rendered. Both
+   * controls are described by it: the trigger and the time input are two halves
+   * of the same datetime, and the caption says where that datetime was read.
+   */
+  describedBy: string | undefined;
+  /** The trigger's id, so the field's visible label can point at it. */
+  id: string;
+  /**
+   * The id of the visible field label. The trigger's accessible name starts
+   * with it and ends with the day it currently shows, so the name matches the
+   * label on screen (WCAG 2.5.3) and still says what is selected.
+   */
+  labelledBy: string;
   onValueChange: (value: string) => void;
   /** The viewer's day, resolved on the server — the calendar's ceiling. */
   today: string;
@@ -36,11 +50,15 @@ interface TransactionDateTimeFieldProps {
  * input rewrites the time and leaves the day alone.
  */
 export const TransactionDateTimeField = ({
+  describedBy,
+  id,
+  labelledBy,
   onValueChange,
   today,
   value,
 }: TransactionDateTimeFieldProps) => {
   const [open, setOpen] = useState(false);
+  const valueId = useId();
 
   const day = receiptLocalStringToDay(value);
   const time = receiptLocalStringToTime(value);
@@ -59,13 +77,14 @@ export const TransactionDateTimeField = ({
     <div className="flex flex-col gap-2">
       <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger
-          aria-label={`Transaction date and time: ${label}`}
+          aria-describedby={describedBy}
+          aria-labelledby={`${labelledBy} ${valueId}`}
           className="justify-start"
-          id="transaction-datetime"
+          id={id}
           render={
             <Button variant="outline">
               <CalendarIcon data-icon="inline-start" />
-              {label}
+              <span id={valueId}>{label}</span>
             </Button>
           }
         />
@@ -99,6 +118,7 @@ export const TransactionDateTimeField = ({
         </PopoverContent>
       </Popover>
       <Input
+        aria-describedby={describedBy}
         aria-label="Transaction time"
         disabled={!day}
         onChange={(event) => {

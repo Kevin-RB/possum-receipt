@@ -86,5 +86,7 @@ describe("GET /api/receipts/:id/image", () => {
     const body = await res.arrayBuffer();
     expect(new Uint8Array(body)).toStrictEqual(new Uint8Array([1, 2, 3]));
     expect(res.headers.get("Content-Type")).toBe("image/jpeg");
+    // The bytes are user-uploaded, so the type must not be guessed.
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
   });
 });
