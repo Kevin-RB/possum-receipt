@@ -164,11 +164,20 @@ const buildDefaultValues = (receipt: ReceiptWithItems): FormValues => {
 type FormFieldErrorProps = { message?: string } | undefined;
 
 /**
+ * Whether the field has an error message. `FormFieldError` renders nothing
+ * without one, so this — never the error object itself — is what decides
+ * whether a control is invalid or described: react-hook-form can hold an error
+ * object that carries no message, and a control described by an element that
+ * was never rendered dangles.
+ */
+export const hasError = (error: FormFieldErrorProps) => Boolean(error?.message);
+
+/**
  * Joins the ids a control is described by, dropping the ones whose element is
  * not rendered — a reference to a missing id is silently ignored by assistive
  * technology, but it is still a lie in the DOM.
  */
-const describedBy = (...ids: (string | undefined)[]) => {
+export const describedBy = (...ids: (string | undefined)[]) => {
   const rendered = ids.filter((id): id is string => Boolean(id));
   return rendered.length > 0 ? rendered.join(" ") : undefined;
 };
@@ -180,16 +189,16 @@ const FormFieldError = ({
   error?: FormFieldErrorProps;
   id: string;
 }) =>
-  error?.message ? (
-    <FieldError errors={[{ message: error.message }]} id={id} />
+  hasError(error) ? (
+    <FieldError errors={[{ message: error?.message }]} id={id} />
   ) : null;
 
 /**
  * The error element's id when the field has one to render, so a control never
  * describes itself with an element that is not in the document.
  */
-const errorIdFor = (error: FormFieldErrorProps, id: string) =>
-  error?.message ? id : undefined;
+export const errorIdFor = (error: FormFieldErrorProps, id: string) =>
+  hasError(error) ? id : undefined;
 
 interface ReceiptItemRowProps {
   categoryGroups: CategoryOptionGroup[];
@@ -242,15 +251,15 @@ const LineTotalField = ({
   const errorId = `${id}-error`;
 
   return (
-    <Field data-invalid={!!error}>
+    <Field data-invalid={hasError(error)}>
       <FieldLabel htmlFor={id}>Line Total</FieldLabel>
       <FieldContent>
         <Input
           aria-describedby={describedBy(
             asTyped ? undefined : hintId,
-            error ? errorId : undefined
+            errorIdFor(error, errorId)
           )}
-          aria-invalid={!!error}
+          aria-invalid={hasError(error)}
           id={id}
           step="0.01"
           type="number"
@@ -296,12 +305,12 @@ const ReceiptItemRow = ({
 
   return (
     <FieldGroup className="grid grid-cols-4">
-      <Field className="col-span-2" data-invalid={!!nameError}>
+      <Field className="col-span-2" data-invalid={hasError(nameError)}>
         <FieldLabel htmlFor={`${rowId}-name`}>Name</FieldLabel>
         <FieldContent>
           <Input
-            aria-describedby={nameError ? `${rowId}-name-error` : undefined}
-            aria-invalid={!!nameError}
+            aria-describedby={errorIdFor(nameError, `${rowId}-name-error`)}
+            aria-invalid={hasError(nameError)}
             id={`${rowId}-name`}
             placeholder="Item name"
             {...register(`items.${index}.name` as const)}
@@ -310,7 +319,7 @@ const ReceiptItemRow = ({
         </FieldContent>
       </Field>
 
-      <Field className="col-span-1" data-invalid={!!categoryError}>
+      <Field className="col-span-1" data-invalid={hasError(categoryError)}>
         <FieldLabel
           htmlFor={`${rowId}-category`}
           id={`${rowId}-category-label`}
@@ -323,12 +332,13 @@ const ReceiptItemRow = ({
             name={`items.${index}.categoryId` as const}
             render={({ field: categoryField }) => (
               <CategorySelect
-                describedBy={
-                  categoryError ? `${rowId}-category-error` : undefined
-                }
+                describedBy={errorIdFor(
+                  categoryError,
+                  `${rowId}-category-error`
+                )}
                 groups={categoryGroups}
                 id={`${rowId}-category`}
-                invalid={!!categoryError}
+                invalid={hasError(categoryError)}
                 labelledBy={`${rowId}-category-label`}
                 onValueChange={(value) =>
                   categoryField.onChange(
@@ -394,14 +404,15 @@ const ReceiptItemRow = ({
           />
         </FieldContent>
       </Field>
-      <Field data-invalid={!!quantityError}>
+      <Field data-invalid={hasError(quantityError)}>
         <FieldLabel htmlFor={`${rowId}-quantity`}>Quantity</FieldLabel>
         <FieldContent>
           <Input
-            aria-describedby={
-              quantityError ? `${rowId}-quantity-error` : undefined
-            }
-            aria-invalid={!!quantityError}
+            aria-describedby={errorIdFor(
+              quantityError,
+              `${rowId}-quantity-error`
+            )}
+            aria-invalid={hasError(quantityError)}
             id={`${rowId}-quantity`}
             min="0"
             step="any"
@@ -416,14 +427,15 @@ const ReceiptItemRow = ({
           />
         </FieldContent>
       </Field>
-      <Field data-invalid={!!unitPriceError}>
+      <Field data-invalid={hasError(unitPriceError)}>
         <FieldLabel htmlFor={`${rowId}-unit-price`}>Unit Price</FieldLabel>
         <FieldContent>
           <Input
-            aria-describedby={
-              unitPriceError ? `${rowId}-unit-price-error` : undefined
-            }
-            aria-invalid={!!unitPriceError}
+            aria-describedby={errorIdFor(
+              unitPriceError,
+              `${rowId}-unit-price-error`
+            )}
+            aria-invalid={hasError(unitPriceError)}
             id={`${rowId}-unit-price`}
             // No `min`: a discount's unit price is negative, and the input must
             // not refuse a value the save is about to store.
@@ -600,7 +612,7 @@ export const ReceiptEditForm = ({
                 The merchant information is used to identify the store where the
                 purchase was made.
               </FieldDescription>
-              <Field data-invalid={!!merchantNameError}>
+              <Field data-invalid={hasError(merchantNameError)}>
                 <FieldLabel htmlFor={fieldId("merchant-name")}>Name</FieldLabel>
                 <FieldContent>
                   <Input
@@ -608,7 +620,7 @@ export const ReceiptEditForm = ({
                       merchantNameError,
                       fieldId("merchant-name-error")
                     )}
-                    aria-invalid={!!merchantNameError}
+                    aria-invalid={hasError(merchantNameError)}
                     id={fieldId("merchant-name")}
                     {...register("merchant.name")}
                     placeholder="Store name"
@@ -694,7 +706,7 @@ export const ReceiptEditForm = ({
                   />
                 </FieldContent>
               </Field>
-              <Field data-invalid={!!timezoneError}>
+              <Field data-invalid={hasError(timezoneError)}>
                 <FieldLabel
                   htmlFor={fieldId("timezone")}
                   id={fieldId("timezone-label")}
@@ -712,7 +724,7 @@ export const ReceiptEditForm = ({
                           errorIdFor(timezoneError, fieldId("timezone-error"))
                         )}
                         id={fieldId("timezone")}
-                        invalid={!!timezoneError}
+                        invalid={hasError(timezoneError)}
                         labelledBy={fieldId("timezone-label")}
                         onValueChange={(value) => timezoneField.onChange(value)}
                         value={timezoneField.value}
@@ -789,7 +801,7 @@ export const ReceiptEditForm = ({
                 The amounts shown on the receipt, before and after tax.
               </FieldDescription>
               <FieldGroup className="grid grid-cols-3">
-                <Field data-invalid={!!subtotalError}>
+                <Field data-invalid={hasError(subtotalError)}>
                   <FieldLabel htmlFor={fieldId("totals-subtotal")}>
                     Subtotal
                   </FieldLabel>
@@ -799,7 +811,7 @@ export const ReceiptEditForm = ({
                         subtotalError,
                         fieldId("totals-subtotal-error")
                       )}
-                      aria-invalid={!!subtotalError}
+                      aria-invalid={hasError(subtotalError)}
                       id={fieldId("totals-subtotal")}
                       min="0"
                       step="0.01"
@@ -814,7 +826,7 @@ export const ReceiptEditForm = ({
                     />
                   </FieldContent>
                 </Field>
-                <Field data-invalid={!!gstError}>
+                <Field data-invalid={hasError(gstError)}>
                   <FieldLabel htmlFor={fieldId("totals-gst")}>GST</FieldLabel>
                   <FieldContent>
                     <Input
@@ -822,7 +834,7 @@ export const ReceiptEditForm = ({
                         gstError,
                         fieldId("totals-gst-error")
                       )}
-                      aria-invalid={!!gstError}
+                      aria-invalid={hasError(gstError)}
                       id={fieldId("totals-gst")}
                       min="0"
                       step="0.01"
@@ -837,7 +849,7 @@ export const ReceiptEditForm = ({
                     />
                   </FieldContent>
                 </Field>
-                <Field data-invalid={!!totalError}>
+                <Field data-invalid={hasError(totalError)}>
                   <FieldLabel htmlFor={fieldId("totals-total")}>
                     Total
                   </FieldLabel>
@@ -847,7 +859,7 @@ export const ReceiptEditForm = ({
                         totalError,
                         fieldId("totals-total-error")
                       )}
-                      aria-invalid={!!totalError}
+                      aria-invalid={hasError(totalError)}
                       id={fieldId("totals-total")}
                       min="0"
                       step="0.01"

@@ -11,7 +11,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { updateReceipt } from "./actions";
 import type { ReceiptWithItems } from "./receipt-edit-form";
-import { ReceiptEditForm } from "./receipt-edit-form";
+import {
+  describedBy,
+  errorIdFor,
+  hasError,
+  ReceiptEditForm,
+} from "./receipt-edit-form";
 
 // The save action is a server action over Postgres; these tests never submit a
 // valid form, so the module only has to exist.
@@ -207,7 +212,7 @@ describe(ReceiptEditForm, () => {
   });
 
   it("marks a field invalid and describes it with its error", async () => {
-    renderForm();
+    const { container } = renderForm();
 
     // The merchant's is the first "Name" in the document; the item row's follows.
     const [merchantName] = screen.getAllByLabelText("Name");
@@ -223,5 +228,36 @@ describe(ReceiptEditForm, () => {
     const errorId = merchantName?.getAttribute("aria-describedby");
     expect(errorId).toBeTruthy();
     expect(document.querySelector(`#${errorId}`)?.textContent).toBeTruthy();
+
+    // A rendered error is still only referenced when it has text to read.
+    for (const control of container.querySelectorAll("[aria-describedby]")) {
+      for (const id of control.getAttribute("aria-describedby")?.split(" ") ??
+        []) {
+        expect(document.querySelector(`#${id}`), `#${id}`).not.toBeNull();
+      }
+    }
+  });
+});
+
+/**
+ * `FormFieldError` renders nothing for an error without a message, and
+ * react-hook-form can hold one — zod always supplies a message, so the rendered
+ * form cannot produce that state. The helpers are the honest seam: every
+ * control asks them whether it is invalid and what describes it, so an empty
+ * error cannot leave `aria-describedby` pointing at an element that was never
+ * rendered.
+ */
+describe("field error helpers", () => {
+  it("do not describe a control with an error that has no message", () => {
+    expect(hasError({})).toBeFalsy();
+    expect(errorIdFor({}, "field-error")).toBeUndefined();
+    expect(describedBy(errorIdFor({}, "field-error"))).toBeUndefined();
+  });
+
+  it("describe a control with an error that has a message", () => {
+    expect(hasError({ message: "Required" })).toBeTruthy();
+    expect(
+      describedBy(errorIdFor({ message: "Required" }, "field-error"))
+    ).toBe("field-error");
   });
 });
