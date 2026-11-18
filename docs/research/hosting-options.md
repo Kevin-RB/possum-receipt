@@ -524,3 +524,37 @@ Facts to re-check on decision day:
 - Vercel's Hobby terms (§4 of the Terms of Service), Hobby's Blob and compute allowances, and the `syd1` Pro rates.
 - Whether Vercel Blob's `onUploadCompleted` contract and retry policy are unchanged.
 - That `x-vercel-ip-timezone` is still documented.
+
+---
+
+## Object storage once RustFS goes: Tigris vs R2 vs S3
+
+Every Vercel option drops RustFS, so the bucket is a choice of its own. Prices were read 2026-11-18. S3 prices come from AWS's price-list API (`ap-southeast-2`, published 2026-11-18T03:11Z).
+
+| | Tigris | Cloudflare R2 | AWS S3 (Sydney) |
+| --- | --- | --- | --- |
+| Storage | $0.02/GB-month | $0.015/GB-month | $0.025/GB-month |
+| Writes | $0.005 per 1,000 | $4.50 per million | $0.0055 per 1,000 |
+| Reads | $0.0005 per 1,000 | $0.36 per million | $0.0044 per 10,000 |
+| Egress to the internet | Free | Free | 100 GB/month free across the account, then $0.114/GB |
+| Upload events | Webhook, $0.01 per 1,000 | Through a Queue | Through SNS/SQS/Lambda/EventBridge |
+| Permanent free tier | 5 GB, 10K writes, 100K reads a month | 10 GB, 1M writes, 10M reads a month | None. New accounts get up to $200 in credits for 6 months ([AWS Free Tier](https://aws.amazon.com/free/)) |
+
+Sources: [Tigris pricing](https://www.tigrisdata.com/pricing/), [R2 pricing](https://developers.cloudflare.com/r2/pricing/), [S3 pricing](https://aws.amazon.com/s3/pricing/).
+
+**At the measured corpus (16 MB, ~50 uploads a month), all three cost $0 or a few cents.** Price does not decide between them. What decides it is how each one fits the upload flow (ADR-0001). `/api/storage-events` checks a Bearer token, parses the S3-style `Records[0].s3.object.key`, and tolerates redelivery.
+
+- **Tigris** calls a webhook directly with `Authorization: Bearer <token>` and retries until it gets a 2xx, at least once. Its payload is its own `events[].object.key` shape, though ([object notifications](https://www.tigrisdata.com/docs/buckets/object-notifications/)), so the endpoint would parse two formats: Tigris in production, RustFS in local development. Custom domains must be DNS-only ([custom domains](https://www.tigrisdata.com/docs/buckets/custom-domain/)). Presigned uploads on a custom domain, and where a "global" bucket stores its data, are unverified.
+- **R2** delivers events to a Queue ([event notifications](https://developers.cloudflare.com/r2/buckets/event-notifications/)). A consumer Worker forwards each one to `/api/storage-events`. It **re-shapes the message into the S3 `Records` envelope RustFS sends**, so the endpoint, its parser and local development stay exactly as they are. On the Workers **Free** plan this costs nothing: 100,000 requests a day and 10 ms of CPU per invocation ([Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/); [limits](https://developers.cloudflare.com/workers/platform/limits/)), subrequests are not billed, and Queues include 10,000 operations a day with 24-hour retention ([Queues pricing](https://developers.cloudflare.com/queues/platform/pricing/)). At ~50 uploads a month, usage is a fraction of a percent of each allowance. Presigned URLs only work on `<account>.r2.cloudflarestorage.com` (section 3), so `uploads.tribi.dev` retires and CSP `connect-src` and CORS change.
+- **S3** has no permanent free tier, and its HTTPS events go through SNS. SNS has its own subscription handshake and signed messages, so the endpoint's Bearer check would be replaced. It has the most setup of the three.
+
+## Decision (2026-11-18)
+
+The owner chose, in conversation on 2026-11-18, under #240:
+
+- **App:** Vercel **Hobby**, functions pinned to `syd1`. Cost comes first, and the app fits Hobby's allowances. Moving to Pro is a billing change if the terms or the 1-hour logs ever bite.
+- **Toolchain:** stay on Next's own build. That rules out Cloudflare Workers (vinext or OpenNext).
+- **Database:** Neon Free, Postgres 18, Sydney.
+- **Images:** **Cloudflare R2**, with a small Queue-consumer Worker that forwards upload events to `/api/storage-events` in the S3 `Records` shape, so the endpoint is unchanged. Chosen over Tigris: no app-side parser change, so dev and prod run the same code; a vendor already in use; a larger free tier; and nothing left unverified. Cost: one more deploy target (the Worker via `wrangler`), and the upload host moves to `r2.cloudflarestorage.com`.
+- **Off-box backups:** no longer R2, since R2 now holds the primary images. Use Backblaze B2 (≈ $0.01/month at this size) or another provider independent of Cloudflare.
+- **Expected bill:** US$0/month, plus OpenRouter model usage (#244).
