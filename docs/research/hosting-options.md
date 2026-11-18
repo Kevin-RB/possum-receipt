@@ -19,6 +19,26 @@ Currency: AUD figures are converted at ~0.674 USD per AUD, the rate implied by [
 
 ---
 
+## How Next.js gets deployed
+
+Next.js names four ways to deploy ([Deploying](https://nextjs.org/docs/app/getting-started/deploying), updated 2026-08-06). A **Node.js server** (`next build` + `next start`) and a **Docker container** both "support all Next.js features". A **static export** has "limited" support. **Adapters** vary. *Verified* adapters "are open source, run the full Next.js compatibility test suite, and are hosted under the Next.js GitHub organization"; today those are **Vercel and Bun**. Cloudflare and Netlify "are working on verified adapters". Until then they sit under **Other platforms**, whose integrations "are not built on the public Adapter API and are not verified by the Next.js team, so feature support and compatibility may vary".
+
+| Option in this document | Deployment mode | Builds with Next's own `next build`? |
+| --- | --- | --- |
+| VPS + Coolify (section 1) | Docker (the `runner` target is a standalone Node server) | Yes |
+| Railway (section 2) | Node.js server or Docker | Yes |
+| Cloudflare (section 3) | Other platform: **vinext** (a reimplementation of the Next.js API on Vite) by default, or the OpenNext integration | **vinext: no.** OpenNext: yes, it adapts the build output |
+| Vercel (section 4) | Verified adapter | Yes |
+| Supabase / Neon (sections 5, 6) | Not app hosts: database (and storage) only | n/a |
+| Fly.io, Render (sections 7, 8) | Docker | Yes |
+| AWS ECS / Lightsail (sections 1, 9) | Docker | Yes |
+
+Bun is on the verified list as a **runtime**, not as a host, so it is not an option here. Something still has to run the Bun process.
+
+**Static export is ruled out.** It "does not support Next.js features that require a server", and this app depends on them: server actions (ADR-0002), route handlers (`/api/chat`, `/api/upload`, `/api/storage-events`, `/api/inngest`), `proxy.ts`, and per-request auth and nonces (ADR-0019).
+
+---
+
 ## Summary table
 
 | Option | Pricing model | Est. monthly bill at this usage | Idle month | Region nearest Brisbane | RTT from Brisbane | Change to the system |
@@ -30,7 +50,9 @@ Currency: AUD figures are converted at ~0.674 USD per AUD, the rate implied by [
 | AWS Lightsail 4 GB + Coolify | Flat bundle | US$24 (Sydney gets half the transfer) | Same | Sydney | ~12 ms | Minimal |
 | Hetzner CPX22 + Coolify | Flat, hourly cap | €26.99 ≈ US$31.59 (incl. IPv4) | Same | Singapore | ~104 ms (183 ms in one recent window) | Minimal |
 | **Railway Hobby** | $5 minimum, usage-based | **≈ US$7–10** | ≈ $5–8 (RAM still billed) | Singapore | ~104 ms | Moderate: no bucket events |
-| **Cloudflare (Workers + R2 + Queues + Hyperdrive) + Neon** | $5 minimum + usage | **≈ US$5** | $5 | Workers run at the Brisbane edge; DB in Sydney | edge ~local; DB ~12 ms | **Large**: new runtime, new upload hook |
+| **Cloudflare (Workers via vinext + R2 + Queues + Hyperdrive) + Neon** | $5 minimum + usage | **≈ US$5** | $5 | Workers run at the Brisbane edge; DB in Sydney | edge ~local; DB ~12 ms | **Largest**: a different framework implementation (vinext, beta), new runtime, new upload hook |
+| **Vercel Hobby + Neon Free + Tigris** | Free, hard caps, no overage | **US$0** | $0 | Sydney (`syd1`) | ~12 ms | Moderate: new upload hook, timezone header, Inngest sync. Hobby is "personal or non-commercial" only |
+| Vercel Pro + Neon Free + Tigris | $20/month platform fee, which includes $20 of usage credit | **US$20** | $20 | Sydney (`syd1`) | ~12 ms | Same as Hobby |
 | Fly.io (syd) + Tigris | Pure usage, no free tier (bills under $5 are waived) | ≈ US$13–14 (self-run PG) / ≈ $47 (Managed PG) | Same unless machines auto-stop | Sydney | ~12 ms | Moderate |
 | Supabase Pro (DB + Storage) + app host | $25 flat + usage | US$25 + app host ≈ **$35–50** | $25 + host | Sydney | ~12 ms | Moderate–large; **Postgres 17** |
 | Neon (DB only) | Free tier, or usage | $0 (Free) – ~$7 (Launch) + app host | $0 | Sydney | ~12 ms | DB only |
@@ -57,6 +79,7 @@ What this means in practice:
 - **Chat latency barely depends on the host.** The model call goes to OpenRouter and its upstream providers, and the time to first token is dominated by them. Origin placement shifts it by one RTT at most.
 - **Page loads do depend on it.** In Singapore, every navigation pays ~100–180 ms before rendering starts. In Sydney it pays ~12 ms. In Brisbane, close to nothing.
 - **App↔DB co-location matters more than user↔app.** A render issues several sequential queries, so a split where the app and the database sit in different regions multiplies the RTT. Every option below keeps them in the same region, except the Cloudflare one, where the edge Worker talks to a Sydney database through Hyperdrive's pooled connections.
+- The sentence at the top of this section assumes Cloudflare is in front. **Vercel is the exception**: Vercel advises against putting another proxy in front of it (section 4), so under Vercel the browser would talk to Vercel's network directly.
 
 ---
 
@@ -205,7 +228,7 @@ None at the OS level.
 
 ---
 
-## 3. Cloudflare (Workers + R2 + Queues + Hyperdrive), with an external Postgres
+## 3. Cloudflare (Workers via vinext or OpenNext + R2 + Queues + Hyperdrive), with an external Postgres
 
 ### How the bill works
 
@@ -223,27 +246,136 @@ None at the OS level.
 
 Workers run at the edge nearest the user, which for Brisbane is Brisbane. Queries go to a Sydney Neon through Hyperdrive's pooled connections, ~12 ms each. R2 accepts an **`oc` (Oceania)** location hint ([data location](https://developers.cloudflare.com/r2/reference/data-location/)). Hints are best-effort.
 
-### Feasibility: this is the largest change
+### Two ways to run Next.js on Workers, and which one Cloudflare now recommends
+
+Cloudflare's Next.js guide (updated 2026-11-05) now says: "Cloudflare recommends [vinext](https://vinext.dev/) as the default way to run Next.js applications on Cloudflare Workers". It keeps OpenNext for "an existing OpenNext application that cannot yet migrate to vinext because of a compatibility gap" ([Cloudflare: Next.js](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)). The two paths are built differently, and that difference is the main risk for this app:
+
+|  | **vinext** (Cloudflare's default) | **OpenNext** (`@opennextjs/cloudflare`, now the fallback) |
+| --- | --- | --- |
+| What it is | "a Vite plugin that reimplements the Next.js API surface" ([Cloudflare](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)). Its README says it "reimplements the Next.js API surface on Vite rather than consuming `next build` output" and "The core is written from scratch" ([README](https://github.com/cloudflare/vinext/blob/main/README.md)). | It "adapts the _output_ of a standard `next build`" and so "inherits broad API coverage and has been well-tested for much longer" (the vinext README's own comparison). |
+| Maturity | Cloudflare: "vinext is in beta". README: "Under active development … not yet a drop-in replacement for every application or production workload", and on production use, "You can, with caution". It does not aim for "bug-for-bug parity with undocumented behavior". npm `latest` is 1.4.6, published 2026-11-16 (registry, read 2026-11-18). | `latest` 1.20.17 (2026-11-12). It supports every minor and patch release of Next 16 ([OpenNext Cloudflare](https://opennext.js.org/cloudflare)). |
+| `proxy.ts` | Listed as supported: "`middleware.ts` and `proxy.ts` (Next.js 16)" (README feature table). | Still **"experimental support since @opennextjs/cloudflare 1.20.3"** ([OpenNext Cloudflare](https://opennext.js.org/cloudflare), re-read 2026-11-18). |
+| Verified by Next.js? | No. Cloudflare is under "Other platforms", with a verified adapter on the Adapter API still in progress ([Next.js: Deploying](https://nextjs.org/docs/app/getting-started/deploying)). | No, for the same reason. |
+| Upgrades | They follow vinext's own releases. Next.js upgrades only arrive once vinext has reimplemented them, and the README says "Experimental or unstable Next.js features are lower priority". | They follow Next.js closely, because OpenNext adapts the real build. |
+
+The vinext README itself says: "If you need a mature, well-tested way to run Next.js outside Vercel, OpenNext is the safer choice."
+
+**vinext compatibility dashboard** ([vinext.dev/compatibility](https://vinext.dev/compatibility)). The latest run was 2026-11-18 02:15 UTC, against Next.js **v16.2.6** (this app is on **16.3.0**). That run reports a 99.7% supported pass rate, a 96.2% overall pass rate, and 93.9% coverage of the supported surface, across 799 test files. Of those files, 721 pass outright. Every middleware and proxy file that matters here passes, including `proxy-runtime-nodejs`, `middleware-request-header-overrides` (9/9), `middleware-general/node-runtime` (68/68) and `app-action-node-middleware` (70/78, with 8 skipped). The files that do not pass and are relevant to this app:
+
+- `app-dir/next-dynamic-csp-nonce`: **1 of 2 tests fail**, flagged "Vite-equivalent required". This is the nonce path for `next/dynamic`. **This app does not import `next/dynamic`** (checked with grep on 2026-11-18), but it is the only App Router nonce test in the run, and it does not pass cleanly.
+- `streaming-ssr`: 4 of 5 pass.
+- Partial Prerendering, Cache Components and the segment cache account for most of the "Deferred" files. The app does not use them.
+
+### Feasibility for this app under vinext
 
 | Area | Assessment |
 | --- | --- |
-| Runtime | The app moves to Workers through `@opennextjs/cloudflare`. It supports Next 16 and the Node.js runtime, but **Node middleware (i.e. `proxy.ts`) has only "experimental support since 1.20.3"** ([OpenNext Cloudflare](https://opennext.js.org/cloudflare)). `proxy.ts` carries the session gate and the per-request CSP nonce (ADR-0019), so this is the riskiest single item. |
-| Upload webhook | **Replaced.** R2 event notifications deliver to a **Queue**, not to a URL ([event notifications](https://developers.cloudflare.com/r2/buckets/event-notifications/)). A consumer Worker, or an HTTP pull consumer, must then do what `/api/storage-events` does today. The signal survives (`object-create` covers PutObject and CompleteMultipartUpload); the transport and the parser change. |
-| Presigned URLs | **Only on `<account>.r2.cloudflarestorage.com`. They "cannot be used with custom domains"** ([presigned URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)). `uploads.tribi.dev` retires, CORS moves to the R2 bucket, and the CSP `connect-src` gains the R2 origin (ADR-0019). The pinned AWS SDK presigner works against R2 as an S3 endpoint. |
-| Postgres 18 | Through Neon (supports 14–18). Drizzle + `pg` runs through Hyperdrive. |
-| Inngest | The serve endpoint runs on Workers. CPU limit: 5 min per invocation (default 30 s). Each Inngest step is a separate invocation, so this fits, but the OCR/parse steps' CPU use must be checked. Wall-clock waiting on OpenRouter is not CPU. |
-| Streaming chat | Workers stream; wall time isn't billed, CPU is. |
-| `cf-timezone` | The app reads a header. On Workers, `request.cf.timezone` also exists. **Verify** that the Managed Transform header still reaches the Worker. |
-| Native `Temporal` | Verify the workerd runtime provides it. |
-| Ops | No servers. Deploy with Workers Builds or `wrangler` in GitHub Actions. `sync-inngest.yml` loses its Coolify wait, since a Workers deploy is synchronous. |
+| `proxy.ts`: session gate, then the nonce on the **forwarded request** headers | Request-header overrides and Node-runtime middleware pass upstream's tests. **The part that matters is not proven:** Next reads the nonce from the request's `Content-Security-Policy-Report-Only` header and stamps its own inline scripts with it (ADR-0019), and vinext reimplements that stamping. Test it by hand. Every script tag on `/`, `/receipts` and `/overview` must carry the nonce, plus the `next-themes` script, which gets it through `x-nonce`. |
+| `next/headers` `headers()` in the root layout | Supported: "Async `headers()`, `cookies()`, `draftMode()`" (README). |
+| Route handlers with streaming (`/api/chat`, `streamText`) | Route handlers and streaming SSR are supported (Cloudflare's feature table). Workers bill CPU, not wall time ([Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)). |
+| Server actions (ADR-0002) | Supported. The action test files pass. |
+| `next-themes` | A client library. It should be unaffected beyond the nonce item above. Not tested. |
+| Inngest `serve` from `inngest/next` | A route handler, so it should work. Not tested on vinext. CPU limit: 5 min per invocation (default 30 s). Each step is its own invocation. |
+| `pg` + drizzle through Hyperdrive | Cloudflare calls `pg` "the recommended driver" for Hyperdrive ([node-postgres with Hyperdrive](https://developers.cloudflare.com/hyperdrive/examples/connect-to-postgres/postgres-drivers-and-libraries/node-postgres/)). The connection string comes from a binding (`env` from `cloudflare:workers`), not `DATABASE_URL`, so `lib/db` changes. `nodejs_compat` is on by default for compatibility dates from 2026-08-04 ([compatibility flags](https://developers.cloudflare.com/workers/configuration/compatibility-flags/)). |
+| AWS SDK presigner | Works against R2: Cloudflare's own example uses `getSignedUrl` from `@aws-sdk/s3-request-presigner` ([R2 + aws-sdk-js-v3](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/)). The presigned URL only works on the `r2.cloudflarestorage.com` host (below). |
+| Native `Temporal` on workerd | Available **behind the `temporal` compatibility flag, and by default from compatibility date 2026-12-01** ([compatibility flags](https://developers.cloudflare.com/workers/configuration/compatibility-flags/); [changelog 2026-11-02](https://developers.cloudflare.com/workers/platform/changelog/)). It is not a blocker either way, because `lib/time.ts` imports `temporal-polyfill/global`. |
+| `cf-timezone` | The **Add visitor location headers** transform adds it "to the request sent to the origin server" ([Managed Transforms](https://developers.cloudflare.com/rules/transform/managed-transforms/reference/)). This document has not confirmed that a Worker sees it. If it doesn't, `request.cf.timezone` carries the same value ([Request](https://developers.cloudflare.com/workers/runtime-apis/request/)), but `lib/viewer.ts` reads `headers()`, so reading it means a vinext-specific code path. **Verify.** |
+| Upload webhook | **Replaced.** R2 event notifications go to a **Queue**, not a URL ([event notifications](https://developers.cloudflare.com/r2/buckets/event-notifications/)). A consumer Worker (or an HTTP pull consumer) must then do what `/api/storage-events` does. The signal survives (`object-create` covers PutObject and CompleteMultipartUpload); the transport and the parser change. |
+| Presigned URLs | **Only on `<ACCOUNT_ID>.r2.cloudflarestorage.com`. They "cannot be used with custom domains"** ([presigned URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/), re-read 2026-11-18). `uploads.tribi.dev` retires, CORS moves to the R2 bucket, and the CSP `connect-src` gains the R2 origin (ADR-0019). |
+| Postgres 18 | Through Neon, which supports 14–18. |
+| Toolchain | The build moves from `next build` to Vite. `next dev` keeps working alongside it (`vinext init` is "non-destructive"), but production runs a different implementation from the one on the developer's machine. The README lists "Turbopack/webpack configuration" and "`next/jest`" as unsupported. Neither is used here: the app uses Vitest. |
+| Ops | No servers. Deploy with `npx @vinext/cloudflare deploy` or Workers Builds. `sync-inngest.yml` loses its Coolify wait, because a Workers deploy is synchronous. |
 
-**Alternative: Cloudflare Containers** run the existing Docker image. Charges accrue only while the container runs: a `basic` (1/4 vCPU, 1 GiB) instance always on ≈ 705 GiB-h over the included 25 → **≈ $6/month memory**, plus active CPU and $0.05/GB Oceania egress ([Containers pricing](https://developers.cloudflare.com/containers/pricing/)). Containers have **no persistent disk**, so Postgres still lives elsewhere, and the R2 and webhook changes above still apply. Less runtime change than OpenNext, same storage change.
+**Bottom line for Cloudflare.** vinext removes the specific blocker this document used to name (`proxy.ts` is no longer "experimental"). In exchange, it replaces Next's own server with a from-scratch reimplementation in beta. That is a different and broader risk: any divergence from Next 16.3 would show up in production first, and only for this app. OpenNext is still the conservative Workers path, and its `proxy.ts` support is still experimental. Neither path is a verified adapter.
 
-**Backups:** Neon's own (below), plus `pg_dump` from GitHub Actions to R2. Images are already in R2, so add a second bucket or B2 for an independent copy.
+**Alternative: Cloudflare Containers** run the existing Docker image, so the app keeps real `next start`. Charges accrue only while the container runs. A `basic` instance (1/4 vCPU, 1 GiB) left on all month uses ≈ 705 GiB-h, beyond the 25 included, for **≈ $6/month of memory**, plus active CPU and $0.05/GB Oceania egress ([Containers pricing](https://developers.cloudflare.com/containers/pricing/)). Containers have **no persistent disk**, so Postgres still lives elsewhere, and the R2 and webhook changes above still apply. It is the least framework risk on Cloudflare, with the same storage change.
+
+**Cost re-check (2026-11-18).** Unchanged. Workers Paid is still a "$5 USD per month" minimum with "no additional charges for data transfer", 10M requests and 30M CPU-ms included ([Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)). Neither vinext nor OpenNext is billed separately.
+
+**Backups:** Neon's own (section 6), plus `pg_dump` from GitHub Actions to R2. Images already live in R2, so add a second bucket or B2 for an independent copy.
 
 ---
 
-## 4. Supabase (managed Postgres + Storage; app hosted elsewhere)
+## 4. Vercel
+
+Prices: [vercel.com/pricing](https://vercel.com/pricing) and [Sydney (syd1) regional pricing](https://vercel.com/docs/pricing/regional-pricing/syd1). All are in USD, excluding GST. Vercel is a **verified adapter** (see the primer), so the app keeps Next's own build.
+
+### How the bill works
+
+| Fact | Detail |
+| --- | --- |
+| **Hobby** | **$0.** Monthly allowances: 4 h Active CPU, 360 GB-h Provisioned Memory, 1M function invocations, 1M CDN requests, 100 GB Fast Data Transfer, 10 GB Fast Origin Transfer. **Blob: 1 GB storage, 10K simple and 2K advanced operations, 10 GB transfer** ([Hobby plan](https://vercel.com/docs/plans/hobby); [pricing](https://vercel.com/pricing)). There is no overage. "If you exceed your usage limits on the Hobby plan, you will have to wait until 30 days have passed before you can use the feature again." Spend Management is "N/A". |
+| **Hobby terms** | "You shall only use the Services under a Hobby plan for your personal or non-commercial use … We may shut down and terminate projects or deployments using the Hobby plan without notice for any reason or no reason" ([Terms of Service §4](https://vercel.com/legal/terms), last updated 2026-10-19). The fair-use page lists "Functions that query DBs or APIs" as fair use. Its "never fair use" list is proxies/VPNs, hot-link media hosting, scrapers, crypto mining, and unauthorised load or penetration testing ([fair use](https://vercel.com/docs/limits/fair-use-guidelines)). |
+| **Pro** | **$20/month** platform fee. That includes 1 deploying seat and **$20 of usage credit**, which applies "from the first unit you use" and "expires at the end of the month". Extra deploying seats are $20/month each; viewer seats are free ([Pro plan](https://vercel.com/docs/plans/pro-plan)). |
+| Pro usage rates in `syd1` | Fluid Active CPU **$0.18/h**; Provisioned Memory **$0.0149/GB-h**; invocations $0.60/M; Fast Data Transfer $0.16/GB; Fast Origin Transfer $0.29/GB; Blob storage **$0.025/GB-month**, simple ops $0.44/M, advanced ops $5.50/M, Blob transfer $0.053/GB ([syd1 pricing](https://vercel.com/docs/pricing/regional-pricing/syd1)). |
+| How functions bill (Fluid compute) | "Vercel bills Active CPU only while your code is actually running. If the request is waiting on I/O, CPU billing pauses but memory billing continues." Once all requests finish, "no CPU or memory charges apply until the next invocation" ([Fluid compute pricing](https://vercel.com/docs/functions/usage-and-pricing)). Default size: 2 GB / 1 vCPU, which Hobby cannot change ([memory](https://vercel.com/docs/functions/configuring-functions/memory)). |
+| Spend controls (Pro) | New Pro teams get a default notification budget of $200. A budget does not stop usage by itself: you must turn on **Pause production deployments**. Checks run "every few minutes", so a pause can lag ([spend management](https://vercel.com/docs/spend-management); [pricing FAQ](https://vercel.com/pricing)). |
+
+**Traps**
+
+- **Memory is billed while waiting.** Every OCR or parse step that waits on OpenRouter, and every chat stream, holds 2 GB of provisioned memory for its whole wall time. That is the main meter here. At this volume it stays tiny (worked month below), but it is why the bill tracks wall time, not CPU.
+- **Hobby Blob is 1 GB.** The existing image corpus is assumed to be up to 2 GB and grows ~150 MB/month, so it **does not fit Hobby Blob**. Hitting the cap pauses the feature for up to 30 days. On Hobby, keep images off Vercel (Tigris or R2, below).
+- **4.5 MB function body limit.** "The maximum payload size for the request body or the response body of a Vercel Function is **4.5 MB**", except for streamed responses ([limitations](https://vercel.com/docs/functions/limitations)). The receipt page serves its image "from an authenticated route" (`app/(app)/receipts/[id]/page.tsx`), so that route must **stream** the object, not buffer it, or a large photo fails with a 413. Uploads are unaffected, because the browser sends them straight to storage (ADR-0001).
+- **Image optimisation is not a cost.** The one `next/image` that shows a receipt is `unoptimized`.
+- **ISR doesn't apply.** Every route is dynamic (ADR-0019), so ISR reads and writes stay at zero.
+- **Bandwidth stays far below every allowance.** One discrepancy: the Pro plan page says Flat Rate CDN includes "1 million CDN requests and 1 TB", while the pricing page says "10M / month included". Neither number matters at this size.
+- **Logs:** Hobby keeps runtime logs for **1 hour**; Pro keeps them for 1 day ([Hobby plan](https://vercel.com/docs/plans/hobby)). ADR-0014's "the server log holds the stack" becomes a one-hour window on Hobby, unless logs are drained elsewhere. Drains are Pro-only.
+- **Staging:** custom environments are "Not available" on Hobby and 1 on Pro ([pricing](https://vercel.com/pricing)). On Hobby, `staging` would be a branch **preview** deployment, which Standard Protection puts behind Vercel Authentication. Inngest then needs "Protection Bypass for Automation", which "is available on all plans" ([bypass](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation); [Inngest on Vercel](https://www.inngest.com/docs/deploy/vercel)).
+
+### Worked month
+
+These are assumptions, not measurements: ~3,000 page and action requests at ~0.3 s; 50 receipts × ~4 Inngest steps, with the OCR and parse steps waiting ~30 s each on OpenRouter; ~200 chat turns at ~20 s; all at the 2 GB default.
+
+| Meter | Estimate | Pro cost in `syd1` |
+| --- | --- | --- |
+| Provisioned memory | ≈ 0.5 (pages) + 2–3 (Inngest) + 2.2 (chat) ≈ **5–6 GB-h**, or 3 GB-h if requests share an instance | ≈ $0.09 |
+| Active CPU | < 0.5 h | < $0.09 |
+| Invocations | < 10K | ≈ $0.01 |
+| Images on Vercel Blob (Pro only) | 2 GB plus small operations | ≈ $0.05 |
+| Neon Free (Postgres, section 6) | Fits 100 CU-h | $0 |
+| **Total** | Hobby: well under every allowance. Pro: ≈ $0.25 of usage, inside the $20 credit | **Hobby $0 · Pro $20** |
+
+An idle month costs the same: Hobby $0, Pro $20. On Pro the usage would need to pass $20 before the bill moved, which is ~80× the estimate.
+
+### Latency
+
+Functions can be pinned to **Sydney, `syd1`** (AWS `ap-southeast-2`), one of 19 compute regions ([regions](https://vercel.com/docs/regions)). New projects default to `iad1` (Washington, D.C.), so **the region must be set** in project settings or with `"regions": ["syd1"]` in `vercel.json`. Hobby allows a single region ([function regions](https://vercel.com/docs/functions/configuring-functions/region)). From Brisbane that is the Brisbane↔Sydney **~12 ms** measured above. Neon in `aws-ap-southeast-2` sits in the same AWS region. Vercel's network terminates TCP at the nearest of 126 PoPs, but "The Vercel region the request is routed to handles TLS encryption and decryption" ([regions](https://vercel.com/docs/regions)), so the handshake pays the Sydney RTT too. This document has not checked whether there is a Brisbane PoP.
+
+`proxy.ts` behaves differently: Vercel runs it as Routing Middleware, which is deployed "to all regions by default, regardless of your region settings. On the Hobby plan, Routing Middleware runs in fewer regions" ([function regions](https://vercel.com/docs/functions/configuring-functions/region)). It runs near the user, then forwards to `syd1`.
+
+### Feasibility
+
+| Area | Assessment |
+| --- | --- |
+| `proxy.ts` (session gate + nonce CSP) | Supported, on the Node.js runtime. Next 16: "Proxy defaults to using the Node.js runtime. The `runtime` config option is not available in Proxy files" ([Next.js: proxy](https://nextjs.org/docs/app/api-reference/file-conventions/proxy)). Vercel bills it as a Fluid function ("Vercel Functions running Fluid compute, including Routing Middleware", [pricing](https://vercel.com/pricing)). The 50 ms CPU guideline applies only to middleware "with the `edge` runtime configured" ([fair use](https://vercel.com/docs/limits/fair-use-guidelines)), which this app does not use. |
+| Streaming chat (`streamText`) | Fine. Maximum duration under Fluid compute: **Hobby 300 s** (default and maximum); **Pro 300 s by default, up to 800 s**, and 1,800 s in beta ([duration](https://vercel.com/docs/functions/configuring-functions/duration)). The limit "includes … streamed responses" ([limitations](https://vercel.com/docs/functions/limitations)). `/api/chat` already sets `maxDuration = 60`. |
+| Inngest serve endpoint | Same duration limits. Inngest recommends setting `maxDuration` on `/api/inngest`, and, with v4 checkpointing (the default), setting checkpointing's `maxRuntime` "20-40% below your maxDuration" ([Inngest on Vercel](https://www.inngest.com/docs/deploy/vercel)). Each step is its own request, so 300 s is ample for an OCR call. |
+| **Inngest sync** | **The official integration replaces `.github/workflows/sync-inngest.yml`.** It sets `INNGEST_SIGNING_KEY` and `INNGEST_EVENT_KEY` and "Automatically syncs your app to Inngest every time you deploy". Set `INNGEST_SERVE_ORIGIN=https://receipts.tribi.dev` so production syncs the custom domain, not the per-deploy `*.vercel.app` URL ([Inngest on Vercel](https://www.inngest.com/docs/deploy/vercel)). The staging environment needs a Vercel custom environment (Pro) or a protected preview with a bypass (above). |
+| Postgres | "Vercel Postgres is no longer available". Postgres now comes from Marketplace partners: "Neon, Prisma Postgres, Supabase, and AWS Aurora Postgres" ([Postgres on Vercel](https://vercel.com/docs/postgres)). **Neon** is the fit: Postgres **18**, Sydney, Free plan (section 6), and billing can go through Vercel ([Neon on the Marketplace](https://vercel.com/marketplace/neon)). Supabase is on Postgres 17 (section 5). |
+| Pooling with drizzle + `pg` | Use Neon's pooled connection string, and call `attachDatabasePool(pool)` from `@vercel/functions` right after creating the `pg` `Pool`. It "ensures that idle pool clients are properly released before functions suspend" and supports `pg` ([`@vercel/functions`](https://vercel.com/docs/functions/functions-api-reference/vercel-functions-package)). That is a one-line change in `lib/db`. Neon's scale-to-zero cold start (section 6) adds to the first request after an idle spell. |
+| **Object storage: Vercel Blob** | Stores live in one chosen region, can be private, and hold files up to 5 TB ([Vercel Blob](https://vercel.com/docs/vercel-blob)). Browser-direct uploads come in two flavours: `handleUpload` (a token exchange) and `handleUploadPresigned` (presigned `PUT` URLs, "Maximum 7 days", with content-type and size limits enforced "at the CDN") ([client uploads](https://vercel.com/docs/vercel-blob/client-upload); [signed URLs](https://vercel.com/docs/vercel-blob/vercel-signed-urls)). Client uploads incur no data-transfer charge. The upload host is Vercel's, `<store>.private.blob.vercel-storage.com`, so CSP `connect-src` and `img-src` change. Private blobs **can be served from a custom domain**, but only through your own Functions ([private storage](https://vercel.com/docs/vercel-blob/private-storage)). Nothing documents a custom domain for the upload `PUT` itself. Not S3-compatible as far as these docs show, so `@aws-sdk/s3-request-presigner` gives way to `@vercel/blob`. |
+| **Upload event (ADR-0001)** | **Yes, there is one: `onUploadCompleted`.** It "is called by Vercel API when a client upload completes". The callback is signed, and verified with `BLOB_WEBHOOK_PUBLIC_KEY` on the presigned path. Vercel Blob "retries up to 5 times on a 429, 500, 502, 503, or 504" and "does not retry … on a 400" ([client uploads](https://vercel.com/docs/vercel-blob/client-upload); [signed URLs](https://vercel.com/docs/vercel-blob/vercel-signed-urls)). It would replace `/api/storage-events`: the same job (find the receipt by key, promote `uploading → pending`, send `receipt/uploaded`), triggered by Vercel instead of a bucket notification, with a signature instead of a Bearer token, and `tokenPayload` to carry the receipt id. **Two costs.** First, `/api/upload` becomes a `@vercel/blob/client` handler instead of the AWS presigner. Second, local development loses the loop: "the `onUploadCompleted` callback will not work as Vercel Blob cannot contact your localhost", so it needs a tunnel (`VERCEL_BLOB_CALLBACK_URL`), or `docker compose` keeps RustFS and production differs from dev. |
+| Object storage: keep an external S3 | **Tigris** keeps the current contract closest: a webhook with `Authorization: Bearer <token>`, and a 5 GB free tier (section 7). Only the event envelope parser changes, as it did for RustFS (ADR-0006). **R2** works for storage, but its events go to a Queue (section 3), which needs a Cloudflare Worker. Either way, presigned URLs are on the vendor's host, not `uploads.tribi.dev`, so CSP and CORS change. On Hobby, external storage is required anyway (the 1 GB Blob cap above). |
+| **`cf-timezone` (ADR-0016)** | **Vercel advises against Cloudflare in front.** "**We do not recommend** placing a reverse proxy server in front of your Vercel project". The reasons: firewall visibility, client IPs, and "Two independently managed caches" ([reverse proxy](https://vercel.com/docs/security/reverse-proxy); [KB](https://vercel.com/kb/guide/can-i-use-a-proxy-on-top-of-my-vercel-deployment)). It is _supported_: Cloudflare is a "Verified Proxy Lite" provider on all plans, using `CF-Connecting-IP`, and the SSL/TLS mode must be **Full (strict)**. Behind Cloudflare, `cf-timezone` would keep arriving, because Cloudflare adds it on the way to any origin. But Vercel's own geolocation would describe Cloudflare, not the reader, because preserving geolocation is "Verified Proxy Advanced", Enterprise only. **The recommended setup is DNS-only**, and then the header to read is **`x-vercel-ip-timezone`**: "The name of the time zone for the location of the requester's public IP address in ICANN Time Zone Database name format such as `America/Chicago`" ([request headers](https://vercel.com/docs/headers/request-headers)). The same IANA format means `lib/viewer.ts` changes one header name, and `[viewer-timezone]`'s warning and the Managed Transform prerequisite in AGENTS.md go away. Going DNS-only also drops Cloudflare's edge features for `receipts.tribi.dev`. |
+| Native `Temporal` | **Available.** Node.js **26.x is Vercel's default**, with 24.x also offered ([Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions)). Node 26 shipped "the Temporal API enabled by default" ([Node.js 26.0.0](https://nodejs.org/en/blog/release/v26.0.0)). That matches the `node:26-slim` image used today, and `lib/time.ts` loads `temporal-polyfill/global` regardless. |
+| Security headers (ADR-0019) | Unchanged: `next.config.ts` headers and the `proxy.ts` CSP are Next features. The storage origin in `lib/security/csp.ts` changes with the storage choice. |
+| Deploys | Git push deploys and Instant Rollback on all plans. The Coolify GitHub App and the `migrate` service go away: run `pnpm db:migrate` from CI (or a build step) against Neon before the deployment is promoted. |
+
+### Ops
+
+None at the OS level. You own Neon (managed) and the external bucket, if one is used. Hobby has no spend control because it has hard caps: an over-use pauses the feature, it does not bill.
+
+### Backups
+
+Neon's own restore history (the window depends on the Neon plan, which this document did not check), plus `pg_dump` from a GitHub Actions schedule to R2 or B2 (free tier, as in section 1). For images, use `rclone` from Tigris or R2 to a second provider. If the images are on Blob, there is no S3 API to sync from, so copy them with the `@vercel/blob` SDK (`list` + `get`) in the same scheduled job. That copy is not tested here.
+
+### Hobby eligibility verdict
+
+On the wording, this app fits Hobby. It is a personal receipt tracker with a handful of invited users, no revenue, and no business behind it: "personal or non-commercial use". The current Terms do not define "commercial", and this document did not find a definition elsewhere in Vercel's docs. That makes this **a reading, not a ruling**. Two things would change the answer: any revenue, or using it for someone's business. The other risk is not eligibility but discretion: Hobby projects can be shut down "without notice for any reason or no reason". For the only copy of the users' receipts, that argues for Pro ($20), or at least for the off-box backups above.
+
+---
+
+## 5. Supabase (managed Postgres + Storage; app hosted elsewhere)
 
 Pricing: [supabase.com/pricing](https://supabase.com/pricing).
 
@@ -271,7 +403,7 @@ Sydney (`ap-southeast-2`) ([regions](https://supabase.com/docs/guides/platform/r
 
 ---
 
-## 5. Neon (Postgres only)
+## 6. Neon (Postgres only)
 
 Pricing: [neon.com/pricing](https://neon.com/pricing).
 
@@ -284,11 +416,11 @@ Pricing: [neon.com/pricing](https://neon.com/pricing).
 
 **Worked month:** the app is idle most of the day, so at the 0.25 CU minimum it runs maybe 20–60 h → 5–15 CU-h. **That fits Free.** On Launch it would be ~$1–7.
 
-**Trap:** cold start ("a few hundred milliseconds") on the first query after idle. Neon pairs well with Cloudflare or Fly. On a VPS it is pointless, because Postgres runs locally for free.
+**Trap:** cold start ("a few hundred milliseconds") on the first query after idle. Neon pairs well with Cloudflare, Vercel or Fly. On a VPS it is pointless, because Postgres runs locally for free.
 
 ---
 
-## 6. Fly.io
+## 7. Fly.io
 
 Pricing: [fly.io/pricing](https://fly.io/pricing) and [docs](https://fly.io/docs/about/pricing/). The memory price rose to $6/GB on 2026-10-01.
 
@@ -328,7 +460,7 @@ The app can auto-stop when idle, which lowers the bill but adds cold starts.
 
 ---
 
-## 7. Render
+## 8. Render
 
 Pricing: [render.com/pricing](https://render.com/pricing).
 
@@ -344,7 +476,7 @@ Pricing: [render.com/pricing](https://render.com/pricing).
 
 ---
 
-## 8. Plain AWS (beyond Lightsail)
+## 9. Plain AWS (beyond Lightsail)
 
 | Fact | Detail |
 | --- | --- |
@@ -369,8 +501,25 @@ Oracle Cloud's Always Free tier (Sydney/Melbourne) could be $0, but its capacity
    - Brisbane plan availability, which varies through the day.
    - The 4 GB sizing estimate, which needs swap or CI-built images for `next build`.
 2. **Best latency → BinaryLane Brisbane** (same metro as the owner). Every Sydney host is ~12 ms behind it. Hetzner, Railway and Render (Singapore) are ~104 ms or more, and one recent window measured 183 ms. Depends on WonderNetwork's RTTs, Brisbane↔Sydney 11.9 ms (2026-11-15) and Brisbane↔Singapore 103.7 ms (2026-11-17).
-3. **Cheapest viable → Railway Hobby (≈ US$7–10, Singapore)** if keeping the bill at the floor matters more than latency. It needs RustFS as a service, or the webhook replaced (ADR-0001). Cloudflare + Neon is cheaper on paper (**≈ $5**) and fastest at the edge. However, it has the largest rewrite, and two pieces are unproven for this app: `proxy.ts` on OpenNext, and presigned URLs off the custom domain.
+3. **Cheapest viable → Vercel Hobby + Neon Free + Tigris (US$0, Sydney, ~12 ms).** This replaces Railway (≈ US$7–10, Singapore, ~104 ms) as the floor: it is cheaper, nearer, and keeps Next's own build, because Vercel is a verified adapter. What it costs:
+   - the upload hook changes (a Tigris webhook parser, or Blob's `onUploadCompleted` on Pro);
+   - `lib/viewer.ts` reads `x-vercel-ip-timezone`, with Cloudflare taken out of the path for the app host;
+   - `sync-inngest.yml` gives way to the Inngest integration;
+   - logs are kept for one hour;
+   - and the plan rests on Vercel's "personal or non-commercial use" wording and its right to shut Hobby projects down "for any reason or no reason". It depends on the Hobby terms (read 2026-11-18) and on the image corpus staying off Vercel Blob (1 GB Hobby cap).
+4. **Least ops at a VPS price → Vercel Pro (US$20 flat, Sydney).** The same changes as Hobby, without the terms question. Usage here is ~1% of the included $20 credit, so the bill is flat in practice. It costs a little more than BinaryLane, sits ~12 ms farther away, and leaves no server to patch.
+5. **Cloudflare + Neon (≈ US$5)** is still the cheapest paid option and the fastest at the edge, but it remains the largest change. Cloudflare's default path is now **vinext**, a from-scratch reimplementation of Next.js in beta. It clears the old "`proxy.ts` is experimental" blocker, but swaps it for "production runs a different framework implementation than `next dev`", and its only App Router nonce test does not fully pass. OpenNext still has `proxy.ts` as experimental. Presigned URLs still cannot use a custom domain. Cloudflare Containers (≈ $6 + $5) avoid the framework risk but keep the storage change.
 
-**Overall:** BinaryLane Brisbane + Coolify + `cloudflared`, with off-box `pg_dump` and `rclone` to R2 (free tier), wins two of the three axes. It costs about US$5–10/month more than the cheapest option, in exchange for the lowest latency and no architecture change.
+**Overall:** unchanged. BinaryLane Brisbane + Coolify + `cloudflared`, with off-box `pg_dump` and `rclone` to R2 (free tier), wins two of the three axes. It costs about US$15–17/month more than the cheapest option (Vercel Hobby), in exchange for the lowest latency and no architecture change. If running a server is the thing to avoid, **Vercel Pro is the runner-up**, ahead of Railway and Cloudflare. It keeps Next's own build, runs in Sydney, and has a predictable $20 bill. The work it needs is bounded: storage events, one header, and the Inngest sync.
 
-Facts to re-check on decision day: BinaryLane's 4 GB price and Brisbane availability; Railway's per-second rates; Supabase's Postgres 18 status; OpenNext's `proxy.ts` support level.
+Facts to re-check on decision day:
+
+- BinaryLane's 4 GB price and Brisbane availability.
+- Railway's per-second rates.
+- Supabase's Postgres 18 status.
+- OpenNext's `proxy.ts` support level.
+- vinext's beta status and its compatibility run (pass rate, the Next.js version it tests against, and `next-dynamic-csp-nonce`). Then run `npx vinext check` on this repo.
+- Whether workerd's `temporal` flag is on by default (scheduled for compatibility date 2026-12-01).
+- Vercel's Hobby terms (§4 of the Terms of Service), Hobby's Blob and compute allowances, and the `syd1` Pro rates.
+- Whether Vercel Blob's `onUploadCompleted` contract and retry policy are unchanged.
+- That `x-vercel-ip-timezone` is still documented.
