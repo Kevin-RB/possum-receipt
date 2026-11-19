@@ -182,7 +182,7 @@ Done when `put-object` prints an `ETag`, `get-object` writes the file, `diff` is
 Each of these is a later ticket, and the bucket and token above do not depend on any of them.
 
 - **CORS for browser uploads.** The app's presigned PUT and browser image reads need CORS rules on the bucket; that is configured separately.
-- **Upload-finished events through a Queue.** R2 has no bucket-notification webhook, so the signal that promotes a receipt from `uploading` to `pending` (ADR-0001) becomes a Queue and its consumer.
+- **Upload-finished events.** There is nothing to configure for them. R2 has no bucket-notification webhook, so the app learns that an upload finished from an authenticated call the browser makes after its successful `PUT`, and reconciles stale `uploading` rows when `/receipts` loads (ADR-0020).
 - **The `receipts-backups` bucket and its lock.** Backups get their own bucket, created later, with retention configured then.
 
 ## Related
