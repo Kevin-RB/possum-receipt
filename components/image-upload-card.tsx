@@ -23,9 +23,13 @@ const formSchema = z.object({
 });
 
 type FormValues = z.infer<typeof formSchema>;
-type UploadStage = "requesting-url" | "uploading-to-storage";
+type UploadStage =
+  | "requesting-url"
+  | "uploading-to-storage"
+  | "confirming-upload";
 
 const UPLOAD_STAGE_LABEL: Record<UploadStage, string> = {
+  "confirming-upload": "Checking the upload arrived…",
   "requesting-url": "Starting the upload…",
   "uploading-to-storage": "Uploading your receipt…",
 };
@@ -123,6 +127,26 @@ const uploadReceipt = async (
     throw new UploadError(
       "uploading-to-storage",
       "Failed to upload image to storage"
+    );
+  }
+
+  // The bytes are in the bucket, but nothing has told the app so — there is no
+  // storage webhook to rely on (ADR-0021). This call is what promotes the row,
+  // and the server is the authority: it verifies the object and answers with a
+  // failure when it will not promote. A refused upload stays `uploading` and is
+  // reconciled later, so the card must not report success on a `PUT` alone.
+  onStageChange?.("confirming-upload");
+
+  const confirmRes = await fetch("/api/storage-events", {
+    body: JSON.stringify({ receiptId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  if (!confirmRes.ok) {
+    throw new UploadError(
+      "confirming-upload",
+      await failureMessage(confirmRes)
     );
   }
 

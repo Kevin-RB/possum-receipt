@@ -23,6 +23,53 @@ const cameraInput = () => screen.getByLabelText("Take a photo of a receipt");
 
 const chooseImage = () => screen.getByRole("button", { name: "Choose image" });
 
+const RECEIPT_ID = "receipt-1";
+
+const UPLOAD_URL = "https://storage.test/receipt";
+
+/**
+ * jsdom has no object URLs, so there is nothing for `vi.spyOn` to wrap. The
+ * card revokes its preview URL on unmount, so both have to exist for any test
+ * that drives a real file through the form.
+ */
+const stubObjectUrls = () => {
+  Object.assign(URL, {
+    createObjectURL: () => "blob:preview",
+    revokeObjectURL: () => {},
+  });
+};
+
+const restoreObjectUrls = () => {
+  Reflect.deleteProperty(URL, "createObjectURL");
+  Reflect.deleteProperty(URL, "revokeObjectURL");
+};
+
+/**
+ * The three requests a successful upload makes: a presigned URL, the PUT, and
+ * the confirmation that follows it. The confirmation is the one a test gets to
+ * decide the answer to.
+ */
+const stubUploadFetch = (confirm: () => Promise<Response>) => {
+  const fetchMock = vi.fn<
+    (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+  >((input) => {
+    const url = String(input);
+    if (url === "/api/upload") {
+      return Promise.resolve(
+        Response.json({ receiptId: RECEIPT_ID, uploadUrl: UPLOAD_URL })
+      );
+    }
+    if (url === UPLOAD_URL) {
+      return Promise.resolve(new Response(null, { status: 200 }));
+    }
+
+    return confirm();
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  return fetchMock;
+};
+
 describe(ImageUploadCard, () => {
   it("takes its accessible name from its visible copy", () => {
     render(<ImageUploadCard />);
@@ -158,12 +205,8 @@ describe(ImageUploadCard, () => {
         )
       )
     );
-    // jsdom has no object URLs, so there is nothing for `vi.spyOn` to wrap; the
-    // preview is not what is under test.
-    Object.assign(URL, {
-      createObjectURL: () => "blob:preview",
-      revokeObjectURL: () => {},
-    });
+    // jsdom has no object URLs; the preview is not what is under test.
+    stubObjectUrls();
     const onUploadError = vi.fn<() => void>();
     const { unmount } = render(
       <ImageUploadCard onUploadError={onUploadError} />
@@ -188,8 +231,88 @@ describe(ImageUploadCard, () => {
     // unmount.
     unmount();
     vi.unstubAllGlobals();
-    Reflect.deleteProperty(URL, "createObjectURL");
-    Reflect.deleteProperty(URL, "revokeObjectURL");
+    restoreObjectUrls();
+  });
+
+  it("confirms the upload with the receipt id once the PUT succeeds", async () => {
+    const fetchMock = stubUploadFetch(() =>
+      Promise.resolve(Response.json({ received: true }))
+    );
+    stubObjectUrls();
+    const onUploadComplete = vi.fn<(receiptId: string) => void>();
+    const onUploadStateChange = vi.fn<(stage: string) => void>();
+    const { unmount } = render(
+      <ImageUploadCard
+        onUploadComplete={onUploadComplete}
+        onUploadStateChange={onUploadStateChange}
+      />
+    );
+
+    fireEvent.change(fileInput(), {
+      target: { files: [new File(["x"], "r.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() =>
+      expect(onUploadComplete).toHaveBeenCalledWith(RECEIPT_ID)
+    );
+
+    // Three requests in order, and the last names the receipt — never the
+    // object key, which is server-owned (ADR-0021).
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toStrictEqual([
+      "/api/upload",
+      UPLOAD_URL,
+      "/api/storage-events",
+    ]);
+    const confirmInit = fetchMock.mock.calls.at(-1)?.[1];
+    expect(confirmInit?.method).toBe("POST");
+    expect(JSON.parse(String(confirmInit?.body))).toStrictEqual({
+      receiptId: RECEIPT_ID,
+    });
+
+    // The confirmation is a stage of its own, so the card says what it is doing
+    // rather than freezing on the upload it already finished.
+    expect(onUploadStateChange).toHaveBeenLastCalledWith("confirming-upload");
+
+    unmount();
+    vi.unstubAllGlobals();
+    restoreObjectUrls();
+  });
+
+  it("does not report success when the server refuses to confirm the upload", async () => {
+    // The PUT succeeded but the object was not there when the server looked, so
+    // it answers 409 and leaves the row `uploading` for reconciliation. A card
+    // that trusted its own PUT would show a receipt that does not exist.
+    stubUploadFetch(() =>
+      Promise.resolve(
+        Response.json({ error: USER_ERROR.notFound }, { status: 409 })
+      )
+    );
+    stubObjectUrls();
+    const onUploadComplete = vi.fn<(receiptId: string) => void>();
+    const onUploadError = vi.fn<() => void>();
+    const { unmount } = render(
+      <ImageUploadCard
+        onUploadComplete={onUploadComplete}
+        onUploadError={onUploadError}
+      />
+    );
+
+    fireEvent.change(fileInput(), {
+      target: { files: [new File(["x"], "r.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => expect(onUploadError).toHaveBeenCalledOnce());
+
+    expect(onUploadComplete).not.toHaveBeenCalled();
+    // Catalogue wording from the failure body reaches the field; the card is
+    // idle again and the reader can retry.
+    expect(screen.getByText(USER_ERROR.notFound)).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(chooseImage().getAttribute("aria-disabled")).toBe("false");
+
+    unmount();
+    vi.unstubAllGlobals();
+    restoreObjectUrls();
   });
 
   it("leaves the button described by nothing when idle", () => {

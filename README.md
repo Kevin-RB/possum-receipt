@@ -57,7 +57,7 @@ There are five moving parts. Only one of them is part of this repository.
      └───────────────── │  RustFS    │  │  LM Studio       │
       images + SSE      │  objects   │  │  OCR + LLM       │
                         └─────┬──────┘  └──────────────────┘
-                              │  bucket notification
+                              │  bucket notification (local dev)
                               │  POST /api/storage-events
                               ▼
                         ┌────────────┐
@@ -71,8 +71,8 @@ There are five moving parts. Only one of them is part of this repository.
 ```
 
 - **Next.js app** — UI, HTTP API, server actions, the Inngest function definitions, and every call to Postgres, RustFS, and LM Studio. In development it runs on the host; in production it is a standalone non-root Node server. It is the only component in the repo.
-- **Browser** — never sees a storage credential. It asks the app for a presigned URL and PUTs the image itself, then subscribes to a realtime channel for progress.
-- **RustFS** — S3-compatible object storage for receipt images. Notifies the app over HTTP when an object lands.
+- **Browser** — never sees a storage credential. It asks the app for a presigned URL and PUTs the image itself, confirms the upload with one authenticated call naming the receipt, then subscribes to a realtime channel for progress.
+- **RustFS** — S3-compatible object storage for receipt images. In local development it notifies the app over HTTP when an object lands; production's R2 has no webhook, so the app verifies the upload itself (ADR-0021).
 - **Inngest** — the durable execution layer. Holds event history, drives retries, and fans out to the function definitions hosted in the app. In development it runs as a container; in production it is Inngest Cloud.
 - **LM Studio** — local OpenAI-compatible model server. Two jobs: OCR (vision) and text work (parsing, categorization, chat).
 - **Postgres** — the single source of truth. Holds receipts, line items, the category taxonomy, and auth tables.
@@ -85,16 +85,17 @@ There are five moving parts. Only one of them is part of this repository.
 | Browser | RustFS | HTTPS `PUT` to a presigned URL | Direct, credential-free, one object key, 5-minute expiry |
 | Browser | Inngest | SSE subscription over a realtime channel | One channel per owner (`user:<id>`); token minted by a server action from the session |
 | App | Postgres | `pg` over TCP | Drizzle; every query is owner-scoped |
-| App | RustFS | S3 API (`GetObject`, `PutObject`, `DeleteObject`, presign) | App authenticates as a least-privilege IAM user, not root |
+| App | RustFS | S3 API (`GetObject`, `PutObject`, `DeleteObject`, `HeadObject`, presign) | App authenticates as a least-privilege IAM user, not root |
 | App | LM Studio | OpenAI-compatible HTTP (`/v1/chat/completions`) | AI SDK with `structuredOutputs`; model ids come from `GET /v1/models` |
 | App | Inngest | `inngest.send(...)` | Events are the only coupling between producers and workers |
 | Inngest | App | HTTP to `/api/inngest` | In dev the dev server polls the app's function definitions; in prod, Cloud invokes them |
-| RustFS | App | `POST /api/storage-events` | Bucket notification, authenticated with `Authorization: Bearer $STORAGE_WEBHOOK_SECRET` |
+| RustFS | App | `POST /api/storage-events` | Bucket notification, authenticated with `Authorization: Bearer $STORAGE_WEBHOOK_SECRET`. Local development only; the route fails closed when that secret is unset |
+| Browser | App | `POST /api/storage-events` with `{ receiptId }` | The upload confirmation, sent after the `PUT`: session-authenticated, owner-scoped, and verified with a `HeadObject` before the receipt is promoted (ADR-0021) |
 | RustFS-init | RustFS | Admin API, one-shot | Creates the bucket, the notification rule, the IAM user, and its policy |
 
 Two boundaries are worth calling out, because they are the reason the pipeline is shaped the way it is:
 
-**Object storage is the authority on "the upload finished."** The app never confirms its own presigned URL; a receipt sitting in `uploading` means "the browser may or may not have PUT yet." RustFS says so by calling the webhook, and that call is what starts extraction.
+**The server is the authority on "the upload finished."** A receipt sitting in `uploading` means "the browser may or may not have PUT yet." After a successful `PUT` the browser makes one authenticated call naming the receipt, and the server checks the object with a `HeadObject` before it promotes the row and starts extraction — so `pending` is a fact about the bucket, not a claim by a client. A call that never arrives is settled when `/receipts` loads, which runs the same check on a later visit. In local development RustFS's webhook is the route's second caller, and it is trusted without a `HEAD` because the storage layer is vouching for its own object (ADR-0021).
 
 **Workers live in the app, but the app is not the only thing that talks to them.** The functions are registered at `/api/inngest`, and anything that can name an event — a route, a server action, or a one-off script — can queue work. That is what lets a backfill run from a separate container without the app being restarted or aware of it.
 
@@ -103,7 +104,7 @@ Two boundaries are worth calling out, because they are the reason the pipeline i
 1. **Compress.** The browser downscales the chosen photo to a 2000px longest edge and re-encodes it as JPEG (`lib/images/compress-receipt-image.ts`). EXIF orientation is baked in, so phone photos do not land sideways.
 2. **Request an upload slot.** `POST /api/upload` validates the declared content type and size, inserts a receipt row with `status = 'uploading'` and an object key namespaced `users/<userId>/<uuid>.<ext>`, and returns a presigned PUT URL.
 3. **Upload.** The browser PUTs the bytes straight to RustFS. Storage credentials never leave the server.
-4. **Notification.** RustFS POSTs a bucket notification to `/api/storage-events`, authenticated by the shared secret. The handler reads only the app's own storage event, and an adapter per provider (RustFS, R2) turns the payload into it, picked by its shape. The handler promotes the row `uploading → pending` and sends `receipt/uploaded` with a deterministic event id, so redelivery is deduped by Inngest rather than starting a second run. A non-2xx makes RustFS retry, and the retry re-enqueues instead of losing the extraction.
+4. **Confirmation.** After the `PUT`, the browser makes one authenticated `POST /api/storage-events` naming the receipt id — never an object key, which is server-owned data. The route loads the receipt for the session's owner, checks the stored key with a `HeadObject` (a few attempts inside the one request), and only if the object is there promotes the row `uploading → pending` and sends `receipt/uploaded` with a deterministic event id, so a repeat is deduped by Inngest rather than starting a second run. An absent object answers 409 and leaves the row `uploading`. Local development adds RustFS's bucket notification as a second caller of the same route: it presents `Authorization: Bearer $STORAGE_WEBHOOK_SECRET` and an object key instead of a session and a receipt id, and the two paths cannot reach each other. A confirmation that was lost is settled on the next visit to `/receipts`: a row still `uploading` past the presign window gets one `HEAD` — present, it is promoted and extraction starts; absent, it becomes `error`.
 5. **Extract.** `transcribe-receipt` claims the row (`pending → processing`), downloads the image, and OCRs it with the vision model. The transcript is written as soon as it exists — if parsing then fails, it is the only evidence of what the image said. Next the transcript is parsed into the fixed extraction contract (`lib/db/contract.ts`) and validated against it, and in a final step the flat receipt fields, the line items, and the integrity warning are written and the row marked `done`. The warning is raised when the line items do not reconcile against the stated total.
 6. **Categorize.** Extraction emits `receipt/extracted`; `categorize-receipt` loads the line items and the seeded leaf taxonomy, asks the model for one category per item, writes the assignments, and stamps `categorized_at`. Because the taxonomy is a derived layer, a re-run reapplies it to every item whose `category_source` is `ai`; an item the owner categorised by hand is `user` and is skipped, because that is a decision rather than a draft (see [ADR-0010](docs/adr/0010-user-set-categories-are-decisions.md)).
 7. **Notify the UI.** Throughout, the function publishes `extracting` / `parsing` / `storing` / `done` / `failed` on the owner's realtime channel, carrying the receipt id so the table can route each message to its row.
@@ -118,9 +119,9 @@ uploading ──▶ pending ──▶ processing ──▶ done
                                  └──▶ error
 ```
 
-`uploading` means the row exists and a presigned URL was issued; the browser may not have uploaded yet. `pending` means object storage confirmed the write. `processing` is the claim that a run owns the row — the guard against two concurrent runs. `done` and `error` are terminal.
+`uploading` means the row exists and a presigned URL was issued; the browser may not have uploaded yet. `pending` means the server verified the object is in storage. `processing` is the claim that a run owns the row — the guard against two concurrent runs. `done` and `error` are terminal.
 
-A failed upload is not the same as a failed extraction: a receipt can be re-signed (`POST /api/upload/[receiptId]/retry`) for as long as it sits in `uploading`.
+A failed upload is not the same as a failed extraction: a row that reconciliation finds objectless becomes `error`, and the owner deletes it from the row menu and uploads the photo again — there is no retry route (ADR-0021).
 
 ### Realtime
 
@@ -185,7 +186,7 @@ Most values fall back to a working local default. The rows marked `—` have non
 | `STORAGE_PUBLIC_ENDPOINT` | `STORAGE_ENDPOINT` | RustFS as the browser sees it (presigned URLs are signed against this host) |
 | `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | `rustfsadmin` (does **not** match local compose — see below) | The app's IAM identity — least privilege, not root |
 | `STORAGE_BUCKET` | `receipts` | Bucket holding receipt images |
-| `STORAGE_WEBHOOK_SECRET` | — | Bearer token RustFS sends on bucket notifications |
+| `STORAGE_WEBHOOK_SECRET` | — | Bearer token RustFS sends on its bucket notifications. Local development only: unset, the webhook path refuses every Bearer call. Production does not set it, because the upload confirmation there is the browser's session-authenticated call |
 | `LM_STUDIO_URL` | `http://localhost:1234/v1` | Local model server — chat's `local` entry only; extraction does not use it |
 | `EXTRACT_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Model that reads the image and returns the extraction contract |
 | `CATEGORIZE_MODEL` | `EXTRACT_MODEL` | Model for categorization |
@@ -233,8 +234,8 @@ app/
   (auth)/              sign-in, sign-up
   (app)/               chat (/), /receipts, /receipts/[id], /overview
   api/
-    upload/            create a row + presign, and retry a stuck upload
-    storage-events/    receive bucket notifications as the app's own storage event
+    upload/            create a row + presign
+    storage-events/    confirm an upload (browser) or receive the RustFS webhook
     receipts/[id]/image/  serve the image (presigned GET)
     chat/              agent stream
     inngest/           function registry for the dev server
@@ -248,7 +249,7 @@ lib/
   images/              browser-side compression
   inngest/             client, channels, functions
   receipt/             integrity, line-item money, datetime
-  storage/             S3 client, content types, storage-event adapters
+  storage/             S3 client, content types, upload signal, storage-event adapter
 docs/adr/              architecture decision records
 scripts/               backfill, fixtures, deploy wait, LM Studio check, production boot
 ```

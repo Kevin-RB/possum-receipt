@@ -11,12 +11,14 @@ import {
   createPresignedUrl,
   presignEndpointForHost,
 } from "@/lib/storage/client";
-import { ACCEPTED_MIME_TYPES } from "@/lib/storage/constants";
+import {
+  ACCEPTED_MIME_TYPES,
+  PRESIGNED_URL_EXPIRY_SECONDS,
+} from "@/lib/storage/constants";
 import { extensionForMime } from "@/lib/storage/content-type";
 import { isTimezone } from "@/lib/time";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
-const PRESIGNED_URL_EXPIRY_SECONDS = 60 * 5;
 
 const UploadRequest = z.object({
   contentType: z.enum(ACCEPTED_MIME_TYPES, {

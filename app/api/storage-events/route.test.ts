@@ -1,17 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { USER_ERROR } from "@/lib/errors";
+
 const SECRET = "test-webhook-secret";
 
 const objectKey = "users/user-1/receipt-1.png";
 
 const uploadingReceipt = {
-  id: "00000000-0000-0000-0000-000000000001",
+  id: "123e4567-e89b-12d3-a456-426614174000",
   objectKey,
   status: "uploading",
   userId: "user-1",
 };
 
 const mockFindReceiptByObjectKey =
+  vi.fn<() => Promise<typeof uploadingReceipt | null>>();
+const mockFindReceiptByIdForOwner =
   vi.fn<() => Promise<typeof uploadingReceipt | null>>();
 
 const mockUpdateWhere = vi
@@ -27,8 +31,19 @@ const mockUpdate = vi
 // @ts-expect-error mock types don't need to match Drizzle internals
 vi.mock(import("@/lib/db"), () => ({
   db: { update: mockUpdate },
+  findReceiptByIdForOwner: mockFindReceiptByIdForOwner,
   findReceiptByObjectKey: mockFindReceiptByObjectKey,
-  receipts: { id: {} },
+  listStaleUploadSignalReceipts: vi.fn<() => Promise<unknown[]>>(() =>
+    Promise.resolve([])
+  ),
+  receipts: { id: {}, status: {} },
+}));
+
+const mockGetSession = vi.fn<() => Promise<{ user: { id: string } } | null>>();
+
+// @ts-expect-error mock types don't need to match Better Auth internals
+vi.mock(import("@/lib/auth"), () => ({
+  auth: { api: { getSession: mockGetSession } },
 }));
 
 const mockSend = vi.fn<(event: unknown) => Promise<void>>();
@@ -38,29 +53,14 @@ vi.mock(import("@/lib/inngest/client"), () => ({
   inngest: { send: mockSend },
 }));
 
-// The route reads the secret once, at module load.
-vi.stubEnv("STORAGE_WEBHOOK_SECRET", SECRET);
+const mockObjectExists = vi.fn<() => Promise<boolean>>();
+
+vi.mock(import("@/lib/storage/client"), () => ({
+  BUCKET: "receipts",
+  objectExists: mockObjectExists,
+}));
 
 const { POST } = await import("./route");
-
-// Cloudflare's documented R2 Queue message, forwarded unchanged by the Worker
-// (#252): https://developers.cloudflare.com/r2/buckets/event-notifications/
-const r2Body = (
-  action: string,
-  key: string,
-  object: Record<string, unknown> = {}
-) => ({
-  account: "3f4b7e3dcab231cbfdaa90a6a28bd548",
-  action,
-  bucket: "receipts",
-  eventTime: "2026-11-19T05:36:44.379Z",
-  object: {
-    eTag: "c846ff7a18f28c2e262116d6e8719ef0",
-    key,
-    size: 65_536,
-    ...object,
-  },
-});
 
 const rustfsBody = (key: string, eventName = "s3:ObjectCreated:Put") => ({
   Records: [
@@ -72,7 +72,7 @@ const rustfsBody = (key: string, eventName = "s3:ObjectCreated:Put") => ({
   ],
 });
 
-const post = (body: unknown, token: string | null = SECRET) =>
+const notification = (body: unknown, token: string | null = SECRET) =>
   POST(
     new Request("http://localhost/api/storage-events", {
       body: typeof body === "string" ? body : JSON.stringify(body),
@@ -81,9 +81,22 @@ const post = (body: unknown, token: string | null = SECRET) =>
     })
   );
 
+const uploadSignal = (receiptId: unknown, session = true) =>
+  POST(
+    new Request("http://localhost/api/storage-events", {
+      body: JSON.stringify({ receiptId }),
+      headers: session ? { cookie: "session=abc" } : {},
+      method: "POST",
+    })
+  );
+
 describe("POST /api/storage-events", () => {
   beforeEach(() => {
+    vi.stubEnv("STORAGE_WEBHOOK_SECRET", SECRET);
     mockFindReceiptByObjectKey.mockResolvedValue(uploadingReceipt);
+    mockFindReceiptByIdForOwner.mockResolvedValue(uploadingReceipt);
+    mockGetSession.mockResolvedValue({ user: { id: "user-1" } });
+    mockObjectExists.mockResolvedValue(true);
     // Re-established per test: `vi.restoreAllMocks` in `afterEach` resets the
     // implementation of every `vi.fn` created at module scope.
     mockUpdateWhere.mockClear().mockResolvedValue();
@@ -99,40 +112,78 @@ describe("POST /api/storage-events", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
-  describe("authentication", () => {
-    it("rejects a missing bearer token without looking a receipt up", async () => {
-      const res = await post(rustfsBody(objectKey), null);
+  describe("choosing the path", () => {
+    it("refuses a request carrying neither credentials", async () => {
+      mockGetSession.mockResolvedValue(null);
+
+      const res = await uploadSignal(uploadingReceipt.id, false);
 
       expect(res.status).toBe(401);
       await expect(res.json()).resolves.toStrictEqual({
-        error: "Unauthorized",
+        error: USER_ERROR.unauthorized,
       });
+      expect(mockFindReceiptByIdForOwner).not.toHaveBeenCalled();
       expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
     });
 
+    it("does not let a session reach the webhook path", async () => {
+      // A RustFS-shaped body with a cookie but no Bearer token is a browser
+      // request, so it fails the upload-signal body check instead of promoting
+      // an object by key.
+      const res = await notification(rustfsBody(objectKey), null);
+
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toStrictEqual({
+        error: USER_ERROR.invalidInput,
+      });
+      expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it("does not let a Bearer token reach the browser path", async () => {
+      const res = await notification({ receiptId: uploadingReceipt.id });
+
+      expect(res.status).toBe(400);
+      expect(mockFindReceiptByIdForOwner).not.toHaveBeenCalled();
+      expect(mockObjectExists).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the RustFS webhook", () => {
     it("rejects a wrong bearer token", async () => {
-      const res = await post(rustfsBody(objectKey), "wrong-secret");
+      const res = await notification(rustfsBody(objectKey), "wrong-secret");
 
       expect(res.status).toBe(401);
       expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
     });
-  });
 
-  describe("body validation", () => {
+    it("fails closed when no secret is configured", async () => {
+      vi.stubEnv("STORAGE_WEBHOOK_SECRET", "");
+
+      // The old behaviour accepted any RustFS-shaped body when the variable was
+      // unset, which is the one case that must never be trusted.
+      const res = await notification(rustfsBody(objectKey), SECRET);
+
+      expect(res.status).toBe(401);
+      expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
     it("rejects a body that is not JSON", async () => {
-      const res = await post("not-json");
+      const res = await notification("not-json");
 
       expect(res.status).toBe(400);
       await expect(res.json()).resolves.toStrictEqual({
         error: "Invalid body",
       });
-      expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
     });
 
     it("rejects an unrecognised shape and logs the parse failure", async () => {
-      const res = await post({ events: [{ object: { key: "x" } }] });
+      const res = await notification({ events: [{ object: { key: "x" } }] });
 
       expect(res.status).toBe(400);
       await expect(res.json()).resolves.toStrictEqual({
@@ -145,19 +196,16 @@ describe("POST /api/storage-events", () => {
       );
       expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
     });
-  });
 
-  describe("a RustFS upload bucket notification", () => {
     it("promotes an uploading receipt using the decoded object key", async () => {
       const encoded = objectKey.replaceAll("/", "%2F");
 
-      const res = await post(rustfsBody(encoded));
+      const res = await notification(rustfsBody(encoded));
 
       expect(res.status).toBe(200);
-      await expect(res.json()).resolves.toStrictEqual({ received: true });
       expect(mockFindReceiptByObjectKey).toHaveBeenCalledWith(objectKey);
       expect(mockUpdateSet).toHaveBeenCalledWith({ status: "pending" });
-      expect(mockSend).toHaveBeenCalledWith({
+      expect(mockSend).toHaveBeenCalledExactlyOnceWith({
         data: {
           receiptId: uploadingReceipt.id,
           userId: uploadingReceipt.userId,
@@ -165,6 +213,8 @@ describe("POST /api/storage-events", () => {
         id: `receipt-uploaded-${uploadingReceipt.id}`,
         name: "receipt/uploaded",
       });
+      // The webhook is the storage layer's own word, so it is not re-verified.
+      expect(mockObjectExists).not.toHaveBeenCalled();
     });
 
     it("re-sends for a pending receipt without updating it", async () => {
@@ -173,7 +223,7 @@ describe("POST /api/storage-events", () => {
         status: "pending",
       });
 
-      const res = await post(rustfsBody(objectKey));
+      const res = await notification(rustfsBody(objectKey));
 
       expect(res.status).toBe(200);
       expect(mockUpdateSet).not.toHaveBeenCalled();
@@ -185,42 +235,103 @@ describe("POST /api/storage-events", () => {
       );
     });
 
-    it.each(["processing", "done"])("ignores a %s receipt", async (status) => {
-      mockFindReceiptByObjectKey.mockResolvedValue({
-        ...uploadingReceipt,
-        status,
-      });
+    it.each(["processing", "done", "error"])(
+      "ignores a %s receipt",
+      async (status) => {
+        mockFindReceiptByObjectKey.mockResolvedValue({
+          ...uploadingReceipt,
+          status,
+        });
 
-      const res = await post(rustfsBody(objectKey));
+        const res = await notification(rustfsBody(objectKey));
+
+        expect(res.status).toBe(200);
+        expect(mockUpdateSet).not.toHaveBeenCalled();
+        expect(mockSend).not.toHaveBeenCalled();
+      }
+    );
+
+    it("ignores an object-removed notification as not an upload", async () => {
+      const res = await notification(
+        rustfsBody(objectKey, "s3:ObjectRemoved:Delete")
+      );
+
+      expect(res.status).toBe(200);
+      expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it("ignores an object key no receipt claims", async () => {
+      mockFindReceiptByObjectKey.mockResolvedValue(null);
+
+      const res = await notification(rustfsBody("users/user-1/unknown.png"));
 
       expect(res.status).toBe(200);
       expect(mockUpdateSet).not.toHaveBeenCalled();
       expect(mockSend).not.toHaveBeenCalled();
     });
 
-    it("ignores an object-removed notification as not an upload", async () => {
-      const res = await post(rustfsBody(objectKey, "s3:ObjectRemoved:Delete"));
+    it("returns 500 when the event cannot be enqueued", async () => {
+      mockSend.mockRejectedValue(new Error("inngest unavailable"));
+
+      const res = await notification(rustfsBody(objectKey));
+
+      expect(res.status).toBe(500);
+      await expect(res.json()).resolves.toStrictEqual({
+        error: "Failed to enqueue extraction",
+      });
+    });
+
+    it("ignores an empty object key without looking a receipt up", async () => {
+      const res = await notification(rustfsBody(""));
 
       expect(res.status).toBe(200);
-      await expect(res.json()).resolves.toStrictEqual({ received: true });
       expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
-      expect(mockSend).not.toHaveBeenCalled();
-      expect(console.warn).toHaveBeenCalledWith(
-        expect.stringContaining("storage-events: not an upload — ignored"),
-        expect.anything()
-      );
     });
   });
 
-  describe("an R2 upload message", () => {
-    it("promotes an uploading receipt using the object key as is", async () => {
-      const res = await post(r2Body("PutObject", objectKey));
+  describe("the browser's upload signal", () => {
+    it("rejects a body that names no receipt", async () => {
+      const res = await uploadSignal({});
+
+      expect(res.status).toBe(400);
+      expect(mockFindReceiptByIdForOwner).not.toHaveBeenCalled();
+    });
+
+    it("rejects a receipt id that is not a uuid", async () => {
+      const res = await uploadSignal("receipt-1");
+
+      expect(res.status).toBe(400);
+      expect(mockFindReceiptByIdForOwner).not.toHaveBeenCalled();
+    });
+
+    it("refuses another owner's receipt and changes nothing", async () => {
+      mockFindReceiptByIdForOwner.mockResolvedValue(null);
+
+      const res = await uploadSignal(uploadingReceipt.id);
+
+      expect(res.status).toBe(404);
+      expect(mockFindReceiptByIdForOwner).toHaveBeenCalledWith(
+        uploadingReceipt.id,
+        "user-1"
+      );
+      expect(mockObjectExists).not.toHaveBeenCalled();
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it("promotes a verified upload once, then enqueues it", async () => {
+      const res = await uploadSignal(uploadingReceipt.id);
 
       expect(res.status).toBe(200);
       await expect(res.json()).resolves.toStrictEqual({ received: true });
-      expect(mockFindReceiptByObjectKey).toHaveBeenCalledWith(objectKey);
+      // The key comes from the row, never from the request.
+      expect(mockObjectExists).toHaveBeenCalledExactlyOnceWith({
+        bucket: "receipts",
+        key: objectKey,
+      });
       expect(mockUpdateSet).toHaveBeenCalledWith({ status: "pending" });
-      expect(mockSend).toHaveBeenCalledWith({
+      expect(mockSend).toHaveBeenCalledExactlyOnceWith({
         data: {
           receiptId: uploadingReceipt.id,
           userId: uploadingReceipt.userId,
@@ -230,66 +341,85 @@ describe("POST /api/storage-events", () => {
       });
     });
 
-    it("promotes on a completed multipart upload", async () => {
-      const res = await post(r2Body("CompleteMultipartUpload", objectKey));
+    it("leaves an upload with no object uploading, and enqueues nothing", async () => {
+      mockObjectExists.mockResolvedValue(false);
 
-      expect(res.status).toBe(200);
-      expect(mockFindReceiptByObjectKey).toHaveBeenCalledWith(objectKey);
-      expect(mockUpdateSet).toHaveBeenCalledWith({ status: "pending" });
-      expect(mockSend).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "receipt/uploaded" })
-      );
-    });
+      const res = await uploadSignal(uploadingReceipt.id);
 
-    it.each([
-      // Delete messages carry no size or eTag.
-      ["DeleteObject", { eTag: undefined, size: undefined }],
-      ["LifecycleDeletion", { eTag: undefined, size: undefined }],
-      [
-        "CopyObject",
-        { copySource: { bucket: "receipts", object: "original.png" } },
-      ],
-    ])("ignores an R2 %s message as not an upload", async (action, object) => {
-      const res = await post(r2Body(action, objectKey, object));
-
-      expect(res.status).toBe(200);
-      await expect(res.json()).resolves.toStrictEqual({ received: true });
-      expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
+      expect(res.status).toBe(409);
+      await expect(res.json()).resolves.toStrictEqual({
+        error: USER_ERROR.uploadFailed,
+      });
+      // One HEAD per attempt, no promotion and no extraction.
+      expect(mockObjectExists).toHaveBeenCalledTimes(3);
+      expect(mockUpdateSet).not.toHaveBeenCalled();
       expect(mockSend).not.toHaveBeenCalled();
-      expect(console.warn).toHaveBeenCalledWith(
-        expect.stringContaining("storage-events: not an upload — ignored"),
-        expect.anything()
+    });
+
+    it("returns 500 when the object cannot be checked, leaving the row alone", async () => {
+      mockObjectExists.mockRejectedValue(
+        Object.assign(new Error("Forbidden"), {
+          $metadata: { httpStatusCode: 403 },
+        })
+      );
+
+      const res = await uploadSignal(uploadingReceipt.id);
+
+      expect(res.status).toBe(500);
+      await expect(res.json()).resolves.toStrictEqual({
+        error: USER_ERROR.generic,
+      });
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it("re-sends for a pending receipt without updating it", async () => {
+      mockFindReceiptByIdForOwner.mockResolvedValue({
+        ...uploadingReceipt,
+        status: "pending",
+      });
+
+      const res = await uploadSignal(uploadingReceipt.id);
+
+      expect(res.status).toBe(200);
+      expect(mockObjectExists).not.toHaveBeenCalled();
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockSend).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          id: `receipt-uploaded-${uploadingReceipt.id}`,
+          name: "receipt/uploaded",
+        })
       );
     });
-  });
 
-  it("ignores an object key no receipt claims", async () => {
-    mockFindReceiptByObjectKey.mockResolvedValue(null);
+    it.each(["processing", "done", "error"])(
+      "ignores a %s receipt without enqueuing anything",
+      async (status) => {
+        mockFindReceiptByIdForOwner.mockResolvedValue({
+          ...uploadingReceipt,
+          status,
+        });
 
-    const res = await post(rustfsBody("users/user-1/unknown.png"));
+        const res = await uploadSignal(uploadingReceipt.id);
 
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toStrictEqual({ received: true });
-    expect(mockUpdateSet).not.toHaveBeenCalled();
-    expect(mockSend).not.toHaveBeenCalled();
-  });
+        expect(res.status).toBe(200);
+        expect(mockObjectExists).not.toHaveBeenCalled();
+        expect(mockUpdateSet).not.toHaveBeenCalled();
+        expect(mockSend).not.toHaveBeenCalled();
+      }
+    );
 
-  it("returns 500 when the event cannot be enqueued", async () => {
-    mockSend.mockRejectedValue(new Error("inngest unavailable"));
+    it("returns 500 when the enqueue fails after promotion", async () => {
+      mockSend.mockRejectedValue(new Error("inngest unavailable"));
 
-    const res = await post(rustfsBody(objectKey));
+      const res = await uploadSignal(uploadingReceipt.id);
 
-    expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toStrictEqual({
-      error: "Failed to enqueue extraction",
+      expect(res.status).toBe(500);
+      await expect(res.json()).resolves.toStrictEqual({
+        error: USER_ERROR.generic,
+      });
+      // The promotion is committed; a repeat call takes the pending path.
+      expect(mockUpdateSet).toHaveBeenCalledWith({ status: "pending" });
     });
-  });
-
-  it("ignores an empty object key without looking a receipt up", async () => {
-    const res = await post(rustfsBody(""));
-
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toStrictEqual({ received: true });
-    expect(mockFindReceiptByObjectKey).not.toHaveBeenCalled();
   });
 });

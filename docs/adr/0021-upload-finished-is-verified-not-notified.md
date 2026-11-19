@@ -22,7 +22,7 @@ An optimistic promotion — flipping the row to `pending` because the browser sa
 
 The owner decided on 2026-11-19 that images stay on R2, that the upload signal becomes a browser call plus reconciliation, and that the monthly cost is $0. The Queue flow was explicitly declined. This ADR records that decision and supersedes the Queue-and-consumer half of the storage decision in [#240](https://github.com/Kevin-RB/possum-receipt/issues/240).
 
-ADR-0020 recorded the app-owned storage event with one adapter per provider, and its `r2Adapter` was written against the Queue message a forwarding Worker would deliver (#252). The RustFS adapter and the app-owned event shape stand: RustFS still calls the webhook in local development, and the event it produces is still what the route acts on. The `r2Adapter` and the Worker it names do not stand, because there will be no Queue for the Worker to consume. The adapter is dead code in the tree until [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removes it — `lib/storage/event.ts` still registers `r2Adapter` in `storageEventSchema`, with its tests. The Worker was never written: #252 was where it would have been, so there is nothing to remove.
+ADR-0020 recorded the app-owned storage event with one adapter per provider, and its `r2Adapter` was written against the Queue message a forwarding Worker would deliver (#252). The RustFS adapter and the app-owned event shape stand: RustFS still calls the webhook in local development, and the event it produces is still what the route acts on. The `r2Adapter` and the Worker it names do not stand, because there will be no Queue for the Worker to consume. [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removed the adapter, so `lib/storage/event.ts` registers `rustfsAdapter` alone. The Worker was never written: #252 was where it would have been, so there is nothing to remove.
 
 ## Decision
 
@@ -45,7 +45,7 @@ ADR-0020 recorded the app-owned storage event with one adapter per provider, and
 
 ## Consequences
 
-- **The `r2` payload adapter is on its way out.** `lib/storage/event.ts` still registers `rustfsAdapter` and `r2Adapter`, but R2 never speaks to the app, so the `r2` half is dead code that [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removes; the set then keeps `rustfs` (and whatever the browser's call becomes). A future provider that does speak to the app gets an adapter then; nothing is written speculatively now.
+- **The `r2` payload adapter is gone.** `lib/storage/event.ts` registers `rustfsAdapter` alone, because R2 never speaks to the app: [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removed the `r2` half, so the set keeps `rustfs` and whatever the browser's call needs. A future provider that does speak to the app gets an adapter then; nothing is written speculatively now.
 - **"The storage layer notifies us" is no longer an assumption anywhere.** A future storage provider must either call back or be reconciled the same way. The verification step is the part that must not be dropped in the swap, since it is what makes either path trustworthy.
 - **The upload UI carries new work.** It has to make the call after a successful `PUT` and surface a failure as the retry affordance instead of an optimistic confirmation. That is the cost of the browser being the messenger, and it is bounded to one request.
 - **Better Auth's rate limit stays per-instance, in memory.** Database-backed rate-limit storage and Durable Objects were declined with the paid plan, so limits do not survive a restart and do not agree across instances. That is a known limitation of running on the free plan, recorded rather than papered over.
@@ -61,5 +61,9 @@ ADR-0020 recorded the app-owned storage event with one adapter per provider, and
 - [#253](https://github.com/Kevin-RB/possum-receipt/issues/253) (backups bucket, bucket locks and lifecycle rules).
 - ADR-0001 (upload via presigned URL and bucket notification) — the presigned-upload design this refines.
 - ADR-0006 (migrate object storage to RustFS) — the webhook this replaces in production.
-- ADR-0020 (the app owns its storage-event format) — its RustFS adapter stands; its `r2Adapter` is dead code in the tree until [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removes it, and the Queue-forwarding Worker it names was never written.
+- ADR-0020 (the app owns its storage-event format) — its RustFS adapter stands; its `r2Adapter` was removed by [#252](https://github.com/Kevin-RB/possum-receipt/issues/252), and the Queue-forwarding Worker it names was never written.
 - `docs/guides/r2-bucket-and-token.md` — the bucket and token setup this decision depends on.
+
+## Update 2026-11-20
+
+The owner removed the retry route in [#252](https://github.com/Kevin-RB/possum-receipt/issues/252): nothing called it, and by the time a row is `error` the browser no longer holds the file, so re-signing a URL is not an affordance anyone can use. A missing-object `error` row is deleted from its row menu and the photo uploaded again. The sentences above that mention the retry route or its affordance therefore describe the design as accepted, not the code as it stands; everything else this decision records — the browser's call, `HeadObject` before promotion, idempotent repeats, reconciliation on page load — is what shipped.

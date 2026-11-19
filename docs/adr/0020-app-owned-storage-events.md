@@ -6,7 +6,7 @@ Issue: #247
 
 ## Status
 
-Accepted, and partially superseded by ADR-0021 (2026-11-19). The app-owned `StorageEvent` shape and the RustFS adapter stand: RustFS still notifies the webhook in local development, and `lib/storage/event.ts` still turns that envelope into the app's own event. The `r2Adapter` and the Queue-forwarding Worker it names do not: the R2 upload signal became a verified browser call with page-load reconciliation, so the adapter is dead code that [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removes, and the Worker was never written (ADR-0021). Everything below is the record of what was decided and shipped at the time.
+Accepted, and partially superseded by ADR-0021 (2026-11-19). The app-owned `StorageEvent` shape and the RustFS adapter stand: RustFS still notifies the webhook in local development, and `lib/storage/event.ts` still turns that envelope into the app's own event. The `r2Adapter` and the Queue-forwarding Worker it names do not: the R2 upload signal became a verified browser call with page-load reconciliation, so [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removed the adapter, and the Worker was never written (ADR-0021). Everything below is the record of what was decided and shipped at the time; the update at the end records the removal.
 
 ## Context
 
@@ -50,3 +50,7 @@ This ADR does not record the production move itself: retiring RustFS and the Coo
 - ADR-0006 (migrate object storage to RustFS) — its RustFS event schema is superseded by this ADR.
 - Issue #240 — the hosting decision, and its [decision comment](https://github.com/Kevin-RB/possum-receipt/issues/240#issuecomment-6978734679), which settled Vercel with R2 for images and RustFS for local development.
 - Issue #247 — this decision; issue #252 — the R2 Queue and Worker.
+
+## Update 2026-11-20
+
+`r2Adapter` is gone: #252 removed it, so `lib/storage/event.ts` keeps `rustfsAdapter` alone and `storageEventSchema` has no second arm to choose between. R2 never posts a payload to the app — the production upload is confirmed by the browser's session-authenticated call naming a receipt id, which the route verifies with a `HeadObject` and reconciles on page load (ADR-0021) — so the adapter had nothing left to parse, and the Queue-and-Worker consequences below are the history of a flow that was declined. The `StorageEvent` shape and the RustFS path stand exactly as recorded above: local development's bucket notification is still the app's only provider-supplied event.
