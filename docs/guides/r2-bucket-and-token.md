@@ -20,7 +20,7 @@ Go to **R2 object storage → Overview → Account Details → Manage (API Token
 - **Specify bucket:** **`receipts`** — this bucket only, not all buckets. This is what keeps the token away from `receipts-backups` when it exists, and from every other bucket in the account.
 - **TTL:** leave the default unless you intend to rotate the token. If you do set an expiry, diarise it: when the token expires, uploads and image reads stop with it.
 
-Nothing beyond object access is needed. R2's event notifications require the Workers Paid plan, and this design deliberately does not use them: the app learns that an upload finished from one authenticated call the browser makes after its successful `PUT`, verified server-side, with a page-load reconciliation as the safety net (ADR-0021). So there is no Queue to administer and no reason to grant more than `Object Read & Write` on `receipts`.
+Nothing beyond object access is needed. Queues themselves are free on Workers Free, but R2's event-notification feature is gated to Workers Paid, and this design deliberately does not use it: the app learns that an upload finished from one authenticated call the browser makes after its successful `PUT`, verified server-side, with a page-load reconciliation as the safety net (ADR-0021). So there is no Queue to administer and no reason to grant more than `Object Read & Write` on `receipts`.
 
 Managing bucket configuration later is a separate permission, not this token's. Bucket locks and lifecycle rules on the backups bucket ([#253](https://github.com/Kevin-RB/possum-receipt/issues/253)) need a token with **R2 Storage Write** configuration permission, which can be that bucket's own token, created with it. Leave this one object-only rather than growing permissions it does not use.
 
