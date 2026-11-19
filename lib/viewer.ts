@@ -4,10 +4,21 @@ import { isTimezone, resolveToday, resolveTimezone } from "@/lib/time";
 import { warnOnce } from "@/lib/warn-once";
 
 /**
+ * The header the hosting edge puts the viewer's zone on: Vercel's
+ * `x-vercel-ip-timezone`, in IANA form (`Australia/Brisbane`).
+ *
+ * It only arrives on the direct path, so it is there because
+ * `receipts.tribi.dev` is a **DNS-only** record in front of Vercel. Behind
+ * Cloudflare's proxy the zone would describe Cloudflare's edge instead of the
+ * reader, which is why the record is not proxied.
+ */
+const EDGE_TIMEZONE_HEADER = "x-vercel-ip-timezone";
+
+/**
  * The zone to pretend the viewer is in, in local development only.
  *
- * Local requests bypass Cloudflare, so `cf-timezone` never exists here and the
- * viewer path can only ever fall back. `DEV_TIMEZONE` stands in for the edge —
+ * Local requests bypass the edge, so the header never exists here and the
+ * viewer path can only ever fall back. `DEV_TIMEZONE` stands in for it —
  * `DEV_TIMEZONE=America/Bogota pnpm dev` — and every surface then resolves the
  * same way it does in a deployment.
  *
@@ -27,17 +38,18 @@ const devTimezone = (): string | undefined => {
 /**
  * The zone the edge reported for this request, or `undefined` when nothing did.
  *
- * `cf-timezone` comes from Cloudflare's **Add visitor location headers** Managed
- * Transform, which is per zone and off by default. When it is missing in a
- * deployment nothing errors — every surface falls back to the account's zone —
- * so the absence is worth one line in the log rather than none: from then on,
- * "today" is the reader's home day instead of the day they are on.
+ * In a deployment the header is on every request Vercel answers. When it is
+ * missing nothing errors — every surface falls back to the account's zone — so
+ * the absence is worth one line in the log rather than none: from then on,
+ * "today" is the reader's home day instead of the day they are on. The likely
+ * cause is the app's DNS record being proxied again, or the app having been
+ * pointed somewhere other than Vercel.
  *
  * Server-only: the read goes through `next/headers`.
  */
 export const viewerTimezone = async (): Promise<string | undefined> => {
   const requestHeaders = await headers();
-  const fromEdge = requestHeaders.get("cf-timezone");
+  const fromEdge = requestHeaders.get(EDGE_TIMEZONE_HEADER);
 
   if (fromEdge) {
     return fromEdge;
@@ -46,7 +58,7 @@ export const viewerTimezone = async (): Promise<string | undefined> => {
   if (process.env.NODE_ENV === "production") {
     warnOnce(
       "viewer-timezone",
-      "[viewer-timezone] no cf-timezone header: pages fall back to the account's zone. Enable Cloudflare's Add visitor location headers Managed Transform for this zone."
+      "[viewer-timezone] no x-vercel-ip-timezone header: pages fall back to the account's zone. Is receipts.tribi.dev still a DNS-only record in front of Vercel?"
     );
   }
 

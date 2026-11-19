@@ -10,8 +10,15 @@ import { assertInviteCode } from "./auth/invite-code";
 
 export const auth = betterAuth({
   advanced: {
+    // Vercel **overwrites** `x-forwarded-for` with the requester's address and
+    // does not forward an external one, so it cannot be spoofed on the way in.
+    // This matters twice: the `/sign-up/email` rate limit is the brake on
+    // invite-code guessing, and the address is stored on sessions. The old
+    // `cf-connecting-ip` header is gone with the Cloudflare proxy — with a
+    // DNS-only record a client can send any value it likes, which would have
+    // handed it a fresh rate-limit bucket per request.
     ipAddress: {
-      ipAddressHeaders: ["cf-connecting-ip"],
+      ipAddressHeaders: ["x-forwarded-for"],
     },
   },
   database: drizzleAdapter(db, {

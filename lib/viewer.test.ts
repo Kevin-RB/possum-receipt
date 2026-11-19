@@ -3,21 +3,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_TIMEZONE } from "@/lib/time";
 
 /**
- * The chain as every surface walks it: the zone Cloudflare puts on the request,
+ * The chain as every surface walks it: the zone Vercel puts on the request,
  * then the zone the account was created in, then the constant. One chain, one
  * order — the assistant and the charts read the same function, so they cannot
  * disagree about the day.
  *
  * `next/headers` is stubbed; everything below it is the real resolver.
  */
-const request = vi.hoisted(() => ({ header: undefined as string | undefined }));
+const request = vi.hoisted(() => ({
+  // A header a client sends itself. Only the edge's is trusted, so this must
+  // never be read even when it is present.
+  cloudflare: undefined as string | undefined,
+  header: undefined as string | undefined,
+}));
 
 // @ts-expect-error only `get` is reached; the rest of `Headers` is unused
 vi.mock(import("next/headers"), () => ({
   headers: () =>
     Promise.resolve({
-      get: (name: string) =>
-        name === "cf-timezone" ? (request.header ?? null) : null,
+      get: (name: string) => {
+        if (name === "x-vercel-ip-timezone") {
+          return request.header ?? null;
+        }
+        if (name === "cf-timezone") {
+          return request.cloudflare ?? null;
+        }
+        return null;
+      },
     }),
 }));
 
@@ -41,6 +53,7 @@ const todayIn = async (accountZone?: string | null): Promise<string> => {
 describe(viewerTimezone, () => {
   beforeEach(() => {
     request.header = undefined;
+    request.cloudflare = undefined;
   });
 
   afterEach(() => {
@@ -57,6 +70,15 @@ describe(viewerTimezone, () => {
   });
 
   it("has no zone when the header is absent, as in local development", async () => {
+    await expect(viewerTimezone()).resolves.toBeUndefined();
+  });
+
+  it("ignores the Cloudflare header it used to read", async () => {
+    // `cf-timezone` only ever existed because Cloudflare proxied the app. The
+    // record is DNS-only now, and a client can set any header it likes, so the
+    // old name must not resolve a zone any more.
+    request.cloudflare = "Pacific/Kiritimati";
+
     await expect(viewerTimezone()).resolves.toBeUndefined();
   });
 
@@ -96,7 +118,7 @@ describe(viewerTimezone, () => {
     await fresh.viewerTimezone();
 
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("no cf-timezone header")
+      expect.stringContaining("no x-vercel-ip-timezone header")
     );
   });
 
@@ -114,6 +136,7 @@ describe(viewerTimezone, () => {
 describe(viewerZone, () => {
   beforeEach(() => {
     request.header = undefined;
+    request.cloudflare = undefined;
   });
 
   afterEach(() => {
@@ -136,6 +159,7 @@ describe(viewerZone, () => {
 describe(viewerToday, () => {
   beforeEach(() => {
     request.header = undefined;
+    request.cloudflare = undefined;
   });
 
   afterEach(() => {

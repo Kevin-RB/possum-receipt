@@ -1,3 +1,4 @@
+import { attachDatabasePool } from "@vercel/functions";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import "temporal-polyfill/global";
@@ -20,6 +21,11 @@ const createDb = (connectionString: string) => {
     connectionString,
     max: 10,
   });
+  // Vercel suspends a function instance between requests. Without this, every
+  // idle client in this pool stays checked out against Neon, whose free plan
+  // counts connections — a handful of warm instances would exhaust it. On any
+  // other host, including local development, it is a no-op.
+  attachDatabasePool(pool);
   return drizzle({ client: pool, relations });
 };
 
