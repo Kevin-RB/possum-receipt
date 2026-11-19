@@ -23,9 +23,13 @@ const formSchema = z.object({
 });
 
 type FormValues = z.infer<typeof formSchema>;
-type UploadStage = "requesting-url" | "uploading-to-storage";
+type UploadStage =
+  | "requesting-url"
+  | "uploading-to-storage"
+  | "confirming-upload";
 
 const UPLOAD_STAGE_LABEL: Record<UploadStage, string> = {
+  "confirming-upload": "Checking the upload arrived…",
   "requesting-url": "Starting the upload…",
   "uploading-to-storage": "Uploading your receipt…",
 };
@@ -55,6 +59,19 @@ const UploadResponse = z.object({
   uploadUrl: z.string(),
 });
 
+// The confirmation is idempotent by design — `pending` re-sends the same
+// deterministic event id, `uploading` re-verifies the object — so a transient
+// failure is worth retrying here rather than asking the reader to upload the
+// photo again, which would create a second receipt row.
+const CONFIRM_ATTEMPTS = 3;
+const CONFIRM_RETRY_DELAYS_MS = [300, 900];
+
+const sleep = (milliseconds: number) =>
+  // eslint-disable-next-line promise/avoid-new -- the browser has no timer promise
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+
 class UploadError extends Error {
   stage: UploadStage;
   constructor(stage: UploadStage, message: string) {
@@ -77,6 +94,43 @@ const failureMessage = async (response: Response): Promise<string> => {
   const message = typeof body?.error === "string" ? body.error : "";
 
   return isUserMessage(message) ? message : USER_ERROR.uploadFailed;
+};
+
+/**
+ * Tell the app the object has landed, and let it verify. Retried because the
+ * failure modes are transient: a 5xx means the HEAD or the enqueue failed on a
+ * row that is already in the bucket, and a thrown fetch is a dropped
+ * connection. Neither is the upload failing, so neither may be reported as a
+ * failure — the reader would upload the same photo again and end up with two
+ * receipts for it.
+ *
+ * 4xx answers are not retried: 401/404/409 say what happened and will not
+ * change on a second ask.
+ */
+const confirmUpload = async (receiptId: string, attempt = 1): Promise<void> => {
+  const response = await fetch("/api/storage-events", {
+    body: JSON.stringify({ receiptId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+    // A dropped connection is not an answer, so it is retried like a 5xx.
+  }).catch(() => null);
+
+  if (response?.ok) {
+    return;
+  }
+
+  if (response && response.status < 500) {
+    throw new UploadError("confirming-upload", await failureMessage(response));
+  }
+
+  // A 5xx or a network failure: the bytes are in the bucket and `/receipts`
+  // will settle the row, so say that rather than "the upload failed".
+  if (attempt >= CONFIRM_ATTEMPTS) {
+    throw new UploadError("confirming-upload", USER_ERROR.uploadUnconfirmed);
+  }
+
+  await sleep(CONFIRM_RETRY_DELAYS_MS[attempt - 1] ?? 0);
+  return confirmUpload(receiptId, attempt + 1);
 };
 
 const uploadReceipt = async (
@@ -125,6 +179,17 @@ const uploadReceipt = async (
       "Failed to upload image to storage"
     );
   }
+
+  // The bytes are in the bucket, but nothing has told the app so. This call is
+  // what promotes the row, and the server is the authority: it verifies the
+  // object and answers with a failure when it will not promote. A refused
+  // upload stays `uploading` and is reconciled later. A confirmation that never
+  // succeeds does not mean the upload failed — the object is there and
+  // `/receipts` will settle it — so it must not send the reader back to upload
+  // the same photo again.
+  onStageChange?.("confirming-upload");
+
+  await confirmUpload(receiptId);
 
   return receiptId;
 };

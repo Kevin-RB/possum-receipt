@@ -6,7 +6,10 @@ import { z } from "zod/v4";
  *
  * This is the only thing the storage-event webhook acts on. A provider's bucket
  * notification reaches it through that provider's adapter and nothing else, so
- * no provider field is read outside an adapter.
+ * no provider field is read outside an adapter. RustFS is the one provider that
+ * calls back (local development); production R2 never posts a payload to the
+ * app, so its browser call names a receipt id instead and is verified with
+ * `HeadObject` (ADR-0021).
  */
 export interface StorageEvent {
   objectKey: string;
@@ -52,39 +55,17 @@ const rustfsAdapter = z
       : null;
   });
 
-// R2 delivers bucket notifications to a Queue, and the Worker (#252) forwards
-// each message body unchanged, so this is R2's message shape as documented. The
-// object key is used as is: R2 sends it unencoded, unlike RustFS, so decoding it
-// would corrupt a key that contains `%`.
-// Only `action` and `object.key` are required: delete messages carry no `size`
-// or `eTag`, and requiring either would reject them as a parse failure instead
-// of ignoring them as something that is not an upload. `CopyObject` is not an
-// upload even though it creates an object: the app never copies one.
-const r2Adapter = z
-  .looseObject({
-    action: z.string(),
-    object: z.looseObject({ key: z.string() }),
-  })
-  .transform((body): StorageEvent | null =>
-    body.action === "PutObject" || body.action === "CompleteMultipartUpload"
-      ? { objectKey: body.object.key }
-      : null
-  );
-
 /**
  * A provider's bucket notification, turned into the app's storage event.
  *
- * The adapter is picked by the payload's shape, not by an environment setting:
- * a setting that named the wrong provider would reject every notification, and
- * an upload would sit in `uploading` with nothing in the UI to say why. The two
- * shapes cannot be confused — RustFS sends a `Records[]` envelope, R2 sends a
- * top-level `action` and `object` — so shape is a reliable choice.
+ * The shape is the provider's own envelope rather than an app-owned format that
+ * every provider is translated into: only RustFS calls back, and a second
+ * adapter would be written when a provider that calls back is added. A payload
+ * in another shape is a parse failure, which the route logs and rejects.
  *
- * `null` means a bucket notification that is not an upload: a delete from
- * either provider, or a copy from R2. A RustFS copy is an `s3:ObjectCreated:*`
- * event, so it counts, following the bucket rule (`--event put`).
+ * `null` means a bucket notification that is not an upload: a removal, or any
+ * event that does not create an object. A RustFS copy is an
+ * `s3:ObjectCreated:*` event, so it counts, following the bucket rule
+ * (`--event put`).
  */
-export const storageEventSchema: z.ZodType<StorageEvent | null> = z.union([
-  rustfsAdapter,
-  r2Adapter,
-]);
+export const storageEventSchema: z.ZodType<StorageEvent | null> = rustfsAdapter;

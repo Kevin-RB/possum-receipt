@@ -9,8 +9,10 @@ import { requireSession } from "@/lib/auth/dal";
 import { listReceipts } from "@/lib/db";
 import type { ReceiptSelect } from "@/lib/db/schema/receipt";
 import { receiptSelectSchema } from "@/lib/db/schema/receipt";
+import { reportError } from "@/lib/errors";
 import { instantToWallClock } from "@/lib/receipt/datetime";
 import { receiptZone } from "@/lib/receipt/zone-caption";
+import { reconcileStaleUploads } from "@/lib/storage/upload-signal";
 import { viewerClock } from "@/lib/viewer";
 
 /**
@@ -68,6 +70,17 @@ const getReceiptData = async (
 
 const ReceiptsPage = async () => {
   const session = await requireSession();
+
+  // Settle uploads whose browser call never arrived, before the table is read
+  // so the rows reflect it (ADR-0021). A row is only touched after its presign
+  // window has closed, so this costs one HEAD per genuinely stale row and
+  // nothing on a normal visit. A failure here must not cost the reader the page:
+  // the rows still render, and the next visit tries again.
+  try {
+    await reconcileStaleUploads(session.user.id);
+  } catch (error) {
+    reportError("receipts.reconcile-uploads", error);
+  }
 
   // One resolved zone for the render — the same precedence `today` uses — so a
   // pending row's upload time is shown in the reader's zone rather than a fixed

@@ -16,6 +16,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { ImageUploadCard } from "./image-upload-card";
 
 type UploadMachine =
+  | { status: "confirming-upload" }
   | { status: "done"; receiptId: string }
   | { status: "idle" }
   | { status: "requesting-url" }

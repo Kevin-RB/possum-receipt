@@ -30,6 +30,14 @@ export const USER_ERROR = {
   saveFailed: "Failed to save receipt",
   unauthorized: "Your session has expired. Please sign in again.",
   uploadFailed: "The upload failed. Please try again.",
+  /**
+   * The bytes are in the bucket but the app could not confirm it yet (a 5xx or
+   * a dropped connection after the `PUT`). Not a failure to report as one: the
+   * row is settled by `/receipts`, so uploading again would create a second
+   * receipt for one photo (ADR-0021).
+   */
+  uploadUnconfirmed:
+    "Your receipt was uploaded, but we couldn't confirm it yet. It will appear in your receipts shortly — no need to upload it again.",
 } as const;
 
 export type UserErrorCode = keyof typeof USER_ERROR;

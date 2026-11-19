@@ -22,7 +22,7 @@ Go to **R2 object storage → Overview → Account Details → Manage (API Token
 
 Nothing beyond object access is needed. Queues themselves are free on Workers Free, but R2's event-notification feature is gated to Workers Paid, and this design deliberately does not use it: the app learns that an upload finished from one authenticated call the browser makes after its successful `PUT`, verified server-side, with a page-load reconciliation as the safety net (ADR-0021). So there is no Queue to administer and no reason to grant more than `Object Read & Write` on `receipts`.
 
-Managing bucket configuration later is a separate permission, not this token's. Bucket locks and lifecycle rules on the backups bucket ([#253](https://github.com/Kevin-RB/possum-receipt/issues/253)) need a token with **R2 Storage Write** configuration permission, which can be that bucket's own token, created with it. Leave this one object-only rather than growing permissions it does not use.
+Managing bucket configuration later is a separate permission, not this token's. Bucket locks and lifecycle rules on the backups bucket ([#253](https://github.com/Kevin-RB/possum-receipt/issues/253)) need a token with **R2 Storage Write** configuration permission, which can be that bucket's own token, created with it; the `receipts` bucket's CORS policy in section 5 needs the same kind of permission, and is set in the dashboard instead. Leave this one object-only rather than growing permissions it does not use.
 
 Press **Create Account API token**, then copy both values, because they are all you get:
 
@@ -177,12 +177,49 @@ rm /tmp/r2-token-check.txt /tmp/r2-token-check.out
 
 Done when `put-object` prints an `ETag`, `get-object` writes the file, `diff` is silent and prints `same`, and `delete-object` returns `204` with no output. Run the count command again and it is back to 75.
 
+## 5. Allow browser uploads (CORS)
+
+The presigned `PUT` — and the `OPTIONS` preflight that precedes it — is made **by the browser**, to `https://<account-id>.r2.cloudflarestorage.com`, which is a different origin from the app. The app sends the image's own `Content-Type` (`image/jpeg` or `image/png`), and `Content-Type` escapes the preflight only for the three form types (`application/x-www-form-urlencoded`, `multipart/form-data`, `text/plain`), so the browser asks permission first: with no matching rule on the bucket, the upload request is never sent.
+
+This is an owner step, and the app cannot do it. Its token is object-scoped, so `GetBucketCors` and `PutBucketCors` both answer `AccessDenied`; a separate token holding **R2 Storage Write** could set the policy, but the dashboard is enough. In **R2 object storage → `receipts` → Settings → CORS policy**, paste:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://receipts.tribi.dev", "http://localhost:3000"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["content-type"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+`https://receipts.tribi.dev` is production and `http://localhost:3000` is `pnpm dev`; both are listed so the same bucket serves each. `content-type` is the only header the app sends, and `GET` is not listed because image reads go through the app (`app/api/receipts/[id]/image/route.ts`), not the bucket.
+
+### What a missing rule looks like
+
+The upload card says "The upload failed. Please try again." and nothing is promoted, because the failed `PUT` is not the app's to describe (ADR-0014). The reason is in the browser console alone — a CORS error naming the preflight — and the server log shows nothing at all, since the request never reached it. The row already exists, because `POST /api/upload` ran first: after the settle window (`UPLOAD_SETTLE_SECONDS`, the five-minute presign window plus a grace for a slow `PUT`) the next visit to `/receipts` reconciles it to `error`, which reads as a storage fault and is not one. Check the console before the log.
+
+A CSP report in the console is the quieter version of the same failure: `lib/security/csp.ts` lists the R2 origin in `connect-src`, taken from `STORAGE_PUBLIC_ENDPOINT`, which is why that variable has to be set at build time as well as at runtime.
+
+### Verify the rule
+
+With the variables from section 4 loaded:
+
+```sh
+curl -i -X OPTIONS "$R2_ENDPOINT/receipts/users/0/example.jpg" \
+  -H "Origin: https://receipts.tribi.dev" \
+  -H "Access-Control-Request-Method: PUT" \
+  -H "Access-Control-Request-Headers: content-type"
+```
+
+Done when the response carries `access-control-allow-origin: https://receipts.tribi.dev` and allows `PUT` and `content-type`. Without a matching rule the header is absent — or the preflight is refused — and the browser will not send the upload. The real proof is the storage smoke check in `AGENTS.md`: an upload in the app moves its receipt `uploading → pending`, an Inngest run appears, and the console shows no CORS error or CSP report.
+
 ## Not in this guide
 
 Each of these is a later ticket, and the bucket and token above do not depend on any of them.
 
-- **CORS for browser uploads.** The app's presigned PUT and browser image reads need CORS rules on the bucket; that is configured separately.
-- **Upload-finished events.** There is nothing to configure for them. R2 has no bucket-notification webhook, so the app learns that an upload finished from an authenticated call the browser makes after its successful `PUT`, and reconciles stale `uploading` rows when `/receipts` loads (ADR-0021).
+- **Upload-finished events.** There is nothing to configure for them. R2 has no bucket-notification webhook on the free plan, so production learns an upload finished from the browser's authenticated call after its `PUT`, verified server-side with a `HeadObject`, and reconciles stale `uploading` rows when `/receipts` loads (ADR-0021). That is also why the token above stays object-only.
 - **The `receipts-backups` bucket and its lock.** Backups get their own bucket, created later, with retention configured then.
 
 ## Related
@@ -190,3 +227,4 @@ Each of these is a later ticket, and the bucket and token above do not depend on
 - Issue #240 (hosting and storage)
 - ADR-0001 (upload via presigned URL and bucket notification)
 - ADR-0006 (the RustFS migration whose bucket names and key layout this carries over)
+- ADR-0021 (upload-finished is verified, not notified) — the browser call and page-load reconciliation the CORS rule above serves

@@ -64,6 +64,29 @@ export const listReceipts = (ownerId: string) =>
   });
 
 /**
+ * The owner's receipts whose upload signal has not settled, and whose presigned
+ * URL has expired.
+ *
+ * `/receipts` reconciles these on every visit (ADR-0021). `uploading` means the
+ * browser's call never arrived (or arrived too early), so the row is verified
+ * with `HeadObject`; `pending` with no run behind it means the promotion
+ * committed but its enqueue did not, and the only thing left is to send again.
+ * Before the presign window closes an `uploading` row may legitimately be
+ * mid-upload, so only older rows are touched. Owner-scoped like every other
+ * read, and columns are trimmed to what the reconciliation needs — it does not
+ * render them.
+ */
+export const listStaleUploadSignalReceipts = (ownerId: string, before: Date) =>
+  db.query.receipts.findMany({
+    columns: { id: true, objectKey: true, status: true, userId: true },
+    where: {
+      createdAt: { lt: before },
+      status: { in: ["uploading", "pending"] },
+      userId: ownerId,
+    },
+  });
+
+/**
  * The overview's corpus: every done receipt in the window, with its line items
  * and their categories, in one bounded query.
  *
