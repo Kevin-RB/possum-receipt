@@ -1,6 +1,6 @@
 # ADR-0017: App-owned provider keys and a curated model catalogue
 
-Date: 2026-11-04 Revised: 2026-11-09
+Date: 2026-11-04 Revised: 2026-11-19
 
 ## Status
 
