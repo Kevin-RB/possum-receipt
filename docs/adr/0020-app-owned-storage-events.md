@@ -6,7 +6,7 @@ Issue: #247
 
 ## Status
 
-Accepted, and partially superseded by ADR-0021 (2026-11-19). The app-owned `StorageEvent` shape and the RustFS adapter stand: RustFS still notifies the webhook in local development, and `lib/storage/event.ts` still turns that envelope into the app's own event. The `r2Adapter` and the Queue-forwarding Worker it names do not: the R2 upload signal became a verified browser call with page-load reconciliation, so nothing will call them once [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removes the adapter (ADR-0021). Everything below is the record of what was decided and shipped at the time.
+Accepted, and partially superseded by ADR-0021 (2026-11-19). The app-owned `StorageEvent` shape and the RustFS adapter stand: RustFS still notifies the webhook in local development, and `lib/storage/event.ts` still turns that envelope into the app's own event. The `r2Adapter` and the Queue-forwarding Worker it names do not: the R2 upload signal became a verified browser call with page-load reconciliation, so the adapter is dead code that [#252](https://github.com/Kevin-RB/possum-receipt/issues/252) removes, and the Worker was never written (ADR-0021). Everything below is the record of what was decided and shipped at the time.
 
 ## Context
 
