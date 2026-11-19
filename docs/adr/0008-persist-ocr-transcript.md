@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 ## Status
 
-Accepted
+Accepted. Narrowed by ADR-0022 (2026-11-19), landing with [#250](https://github.com/Kevin-RB/possum-receipt/issues/250): extraction becomes one call with no parsing pass, so the early-write rule below has nothing left to precede. The transcript itself and its disclosure stand.
 
 ## Context
 
@@ -14,7 +14,7 @@ This touches the boundary set by ADR-0003 (no provenance, no re-extraction). Tha
 
 ## Decision
 
-Store the OCR transcript on the receipt row as a nullable `transcript` column. It is written immediately after the OCR step and before parsing, so a receipt that later fails to parse still keeps the text OCR produced. The transcript is shown in a collapsed disclosure on the receipt detail page.
+Store the OCR transcript on the receipt row as a nullable `transcript` column. It is written immediately after the OCR step and before parsing, so a receipt that later fails to parse still keeps the text OCR produced. (Narrowed by ADR-0022, landing with #250: one multimodal call reads the image and writes the transcript with the fields, so there is no parsing pass to write before and the transcript is written in `storing`; the transcript and its disclosure are unchanged.) The transcript is shown in a collapsed disclosure on the receipt detail page.
 
 The transcript is an observability artifact for pass 1 only:
 
