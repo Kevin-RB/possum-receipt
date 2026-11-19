@@ -23,7 +23,8 @@
     "db:seed": "tsx ./lib/db/seed.ts",
     "db:fixture": "tsx --env-file-if-exists=.env.local ./scripts/db-fixture.ts",
     "categorize:backfill": "tsx --env-file-if-exists=.env.local ./scripts/backfill-categorization.ts",
-    "eval:chat": "tsx --env-file-if-exists=.env.local ./evals/chat/run.ts"
+    "eval:chat": "tsx --env-file-if-exists=.env.local ./evals/chat/run.ts",
+    "eval:extraction": "tsx --env-file-if-exists=.env.local ./evals/extraction/run.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.80",
