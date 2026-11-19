@@ -82,10 +82,12 @@ services:
       LM_STUDIO_URL: ${LM_STUDIO_URL:-http://host.docker.internal:1234/v1}
       EXTRACT_MODEL: ${EXTRACT_MODEL:-deepseek/deepseek-v4.1-flash-1017}
       CATEGORIZE_MODEL: ${CATEGORIZE_MODEL:-deepseek/deepseek-v4.1-flash-1017}
-      # App-owned credential for chat, extraction and categorization (ADR-0022).
-      # Extraction has no local fallback: unset, every run fails with
-      # "Receipt extraction is not configured" and chat falls back to LM Studio.
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # App-owned credential for chat, extraction and categorization
+      # (ADR-0022). Required, not optional: extraction has no local fallback, so
+      # a deployment without it comes up green and then fails every receipt with
+      # "Receipt extraction is not configured". `:?` turns that into a refused
+      # deploy instead.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?}
     extra_hosts:
