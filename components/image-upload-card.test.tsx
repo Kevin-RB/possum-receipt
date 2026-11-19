@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { USER_ERROR } from "@/lib/errors";
@@ -22,6 +28,53 @@ const fileInput = () => screen.getByLabelText("Upload receipt image");
 const cameraInput = () => screen.getByLabelText("Take a photo of a receipt");
 
 const chooseImage = () => screen.getByRole("button", { name: "Choose image" });
+
+const RECEIPT_ID = "receipt-1";
+
+const UPLOAD_URL = "https://storage.test/receipt";
+
+/**
+ * jsdom has no object URLs, so there is nothing for `vi.spyOn` to wrap. The
+ * card revokes its preview URL on unmount, so both have to exist for any test
+ * that drives a real file through the form.
+ */
+const stubObjectUrls = () => {
+  Object.assign(URL, {
+    createObjectURL: () => "blob:preview",
+    revokeObjectURL: () => {},
+  });
+};
+
+const restoreObjectUrls = () => {
+  Reflect.deleteProperty(URL, "createObjectURL");
+  Reflect.deleteProperty(URL, "revokeObjectURL");
+};
+
+/**
+ * The three requests a successful upload makes: a presigned URL, the PUT, and
+ * the confirmation that follows it. The confirmation is the one a test gets to
+ * decide the answer to.
+ */
+const stubUploadFetch = (confirm: () => Promise<Response>) => {
+  const fetchMock = vi.fn<
+    (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+  >((input) => {
+    const url = String(input);
+    if (url === "/api/upload") {
+      return Promise.resolve(
+        Response.json({ receiptId: RECEIPT_ID, uploadUrl: UPLOAD_URL })
+      );
+    }
+    if (url === UPLOAD_URL) {
+      return Promise.resolve(new Response(null, { status: 200 }));
+    }
+
+    return confirm();
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  return fetchMock;
+};
 
 describe(ImageUploadCard, () => {
   it("takes its accessible name from its visible copy", () => {
@@ -158,12 +211,8 @@ describe(ImageUploadCard, () => {
         )
       )
     );
-    // jsdom has no object URLs, so there is nothing for `vi.spyOn` to wrap; the
-    // preview is not what is under test.
-    Object.assign(URL, {
-      createObjectURL: () => "blob:preview",
-      revokeObjectURL: () => {},
-    });
+    // jsdom has no object URLs; the preview is not what is under test.
+    stubObjectUrls();
     const onUploadError = vi.fn<() => void>();
     const { unmount } = render(
       <ImageUploadCard onUploadError={onUploadError} />
@@ -188,8 +237,180 @@ describe(ImageUploadCard, () => {
     // unmount.
     unmount();
     vi.unstubAllGlobals();
-    Reflect.deleteProperty(URL, "createObjectURL");
-    Reflect.deleteProperty(URL, "revokeObjectURL");
+    restoreObjectUrls();
+  });
+
+  it("confirms the upload with the receipt id once the PUT succeeds", async () => {
+    const fetchMock = stubUploadFetch(() =>
+      Promise.resolve(Response.json({ received: true }))
+    );
+    stubObjectUrls();
+    const onUploadComplete = vi.fn<(receiptId: string) => void>();
+    const onUploadStateChange = vi.fn<(stage: string) => void>();
+    const { unmount } = render(
+      <ImageUploadCard
+        onUploadComplete={onUploadComplete}
+        onUploadStateChange={onUploadStateChange}
+      />
+    );
+
+    fireEvent.change(fileInput(), {
+      target: { files: [new File(["x"], "r.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() =>
+      expect(onUploadComplete).toHaveBeenCalledWith(RECEIPT_ID)
+    );
+
+    // Three requests in order, and the last names the receipt — never the
+    // object key, which is server-owned (ADR-0021).
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toStrictEqual([
+      "/api/upload",
+      UPLOAD_URL,
+      "/api/storage-events",
+    ]);
+    const confirmInit = fetchMock.mock.calls.at(-1)?.[1];
+    expect(confirmInit?.method).toBe("POST");
+    expect(JSON.parse(String(confirmInit?.body))).toStrictEqual({
+      receiptId: RECEIPT_ID,
+    });
+
+    // The confirmation is a stage of its own, so the card says what it is doing
+    // rather than freezing on the upload it already finished.
+    expect(onUploadStateChange).toHaveBeenLastCalledWith("confirming-upload");
+
+    unmount();
+    vi.unstubAllGlobals();
+    restoreObjectUrls();
+  });
+
+  it("does not report success when the server refuses to confirm the upload", async () => {
+    // The PUT succeeded but the object was not there when the server looked, so
+    // it answers 409 and leaves the row `uploading` for reconciliation. A card
+    // that trusted its own PUT would show a receipt that does not exist.
+    const confirm = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValue(
+        Response.json({ error: USER_ERROR.uploadFailed }, { status: 409 })
+      );
+    stubUploadFetch(confirm);
+    stubObjectUrls();
+    const onUploadComplete = vi.fn<(receiptId: string) => void>();
+    const onUploadError = vi.fn<() => void>();
+    const { unmount } = render(
+      <ImageUploadCard
+        onUploadComplete={onUploadComplete}
+        onUploadError={onUploadError}
+      />
+    );
+
+    fireEvent.change(fileInput(), {
+      target: { files: [new File(["x"], "r.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => expect(onUploadError).toHaveBeenCalledOnce());
+
+    // A refusal will not change on a second ask, so it is not retried.
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(onUploadComplete).not.toHaveBeenCalled();
+    // Catalogue wording from the failure body reaches the field; the card is
+    // idle again and the reader can retry.
+    expect(screen.getByText(USER_ERROR.uploadFailed)).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(chooseImage().getAttribute("aria-disabled")).toBe("false");
+
+    unmount();
+    vi.unstubAllGlobals();
+    restoreObjectUrls();
+  });
+
+  it("retries a confirmation that answers 5xx and still completes", async () => {
+    // Each confirmation is idempotent, so a transient server failure is worth
+    // another ask — the successful third attempt is what calls
+    // `onUploadComplete`, and the reader never sees an error.
+    const confirm = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(
+        Response.json({ error: USER_ERROR.generic }, { status: 500 })
+      )
+      .mockResolvedValueOnce(
+        Response.json({ error: USER_ERROR.generic }, { status: 500 })
+      )
+      .mockResolvedValueOnce(Response.json({ received: true }));
+    stubUploadFetch(confirm);
+    stubObjectUrls();
+    const onUploadComplete = vi.fn<(receiptId: string) => void>();
+    const onUploadError = vi.fn<() => void>();
+    const { unmount } = render(
+      <ImageUploadCard
+        onUploadComplete={onUploadComplete}
+        onUploadError={onUploadError}
+      />
+    );
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(fileInput(), {
+        target: { files: [new File(["x"], "r.png", { type: "image/png" })] },
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(confirm).toHaveBeenCalledTimes(3);
+    expect(onUploadComplete).toHaveBeenCalledWith(RECEIPT_ID);
+    expect(onUploadError).not.toHaveBeenCalled();
+    expect(screen.queryByText(USER_ERROR.uploadUnconfirmed)).toBeNull();
+
+    unmount();
+    vi.unstubAllGlobals();
+    restoreObjectUrls();
+  });
+
+  it("says the photo may still arrive when the confirmation keeps failing", async () => {
+    // The object is in the bucket and `/receipts` will settle the row, so
+    // telling the reader the upload failed sends them back to upload the same
+    // photo again — two receipts for one image (ADR-0021).
+    const confirm = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValue(
+        Response.json({ error: USER_ERROR.generic }, { status: 503 })
+      );
+    stubUploadFetch(confirm);
+    stubObjectUrls();
+    const onUploadComplete = vi.fn<(receiptId: string) => void>();
+    const onUploadError = vi.fn<() => void>();
+    const { unmount } = render(
+      <ImageUploadCard
+        onUploadComplete={onUploadComplete}
+        onUploadError={onUploadError}
+      />
+    );
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(fileInput(), {
+        target: { files: [new File(["x"], "r.png", { type: "image/png" })] },
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(confirm).toHaveBeenCalledTimes(3);
+    expect(onUploadComplete).not.toHaveBeenCalled();
+    expect(onUploadError).toHaveBeenCalledOnce();
+    expect(screen.getByText(USER_ERROR.uploadUnconfirmed)).toBeTruthy();
+    expect(screen.queryByText(USER_ERROR.uploadFailed)).toBeNull();
+
+    unmount();
+    vi.unstubAllGlobals();
+    restoreObjectUrls();
   });
 
   it("leaves the button described by nothing when idle", () => {

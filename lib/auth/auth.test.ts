@@ -41,9 +41,13 @@ describe("auth wiring", () => {
     ).toMatchObject({ max: 5, window: 60 });
   });
 
-  it("resolves the client IP from the Cloudflare proxy header", () => {
+  it("resolves the client IP from the header Vercel overwrites", () => {
+    // Vercel writes the real client address into `x-forwarded-for` and refuses
+    // to forward an external one, so it is the only header here a client
+    // cannot pick for itself. `cf-connecting-ip` was the Cloudflare proxy's;
+    // with the app's DNS record no longer proxied it is client-controlled.
     expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toContain(
-      "cf-connecting-ip"
+      "x-forwarded-for"
     );
   });
 });

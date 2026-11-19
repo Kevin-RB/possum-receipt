@@ -1,9 +1,9 @@
 import { z } from "zod";
 
-import { extractionModelsSchema } from "@/lib/ai/models";
+import { extractionModelIdSchema } from "@/lib/ai/models";
 
 export const reprocessReceiptSchema = z.object({
-  models: extractionModelsSchema,
+  model: extractionModelIdSchema,
   receiptId: z.uuid({ message: "Invalid receipt ID" }),
 });
 

@@ -14,11 +14,11 @@ export const USER_ERROR = {
   /** A provider that is rate limited or briefly down: waiting is an instruction. */
   busy: "The assistant is busy right now. Please try again in a moment.",
   deleteFailed: "Failed to delete receipt",
+  extractionUnavailable: "Receipt extraction is not configured",
   /** Nothing more specific is known, or the cause is not ours to describe. */
   generic: "Something went wrong. Please try again.",
   invalidInput: "Validation failed",
   modelNotAvailable: "That model is not available",
-  modelServerUnreachable: "The model server is not reachable",
   modelUnavailable:
     "The assistant's model isn't responding right now. Please try again in a moment.",
   notFound: "Receipt not found",
@@ -30,6 +30,14 @@ export const USER_ERROR = {
   saveFailed: "Failed to save receipt",
   unauthorized: "Your session has expired. Please sign in again.",
   uploadFailed: "The upload failed. Please try again.",
+  /**
+   * The bytes are in the bucket but the app could not confirm it yet (a 5xx or
+   * a dropped connection after the `PUT`). Not a failure to report as one: the
+   * row is settled by `/receipts`, so uploading again would create a second
+   * receipt for one photo (ADR-0021).
+   */
+  uploadUnconfirmed:
+    "Your receipt was uploaded, but we couldn't confirm it yet. It will appear in your receipts shortly — no need to upload it again.",
 } as const;
 
 export type UserErrorCode = keyof typeof USER_ERROR;

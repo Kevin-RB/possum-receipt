@@ -1,6 +1,9 @@
 import { InngestTestEngine } from "@inngest/test";
+import { APICallError, RetryError } from "ai";
+import { NonRetriableError } from "inngest";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 
+import type { ExtractionAttempt } from "@/lib/ai/extract-receipt";
 import type { ReceiptInformationExtraction } from "@/lib/db/contract";
 
 import { statusAfterFailedRun, transcribeReceipt } from "./transcribe-receipt";
@@ -8,12 +11,11 @@ import { statusAfterFailedRun, transcribeReceipt } from "./transcribe-receipt";
 const {
   mockDelete,
   mockDeleteWhere,
+  mockExtract,
   mockFindReceiptByIdForOwner,
   mockInsert,
   mockInsertValues,
-  mockParse,
   mockSet,
-  mockTranscribe,
   mockTransaction,
   mockUpdate,
 } = vi.hoisted(() => {
@@ -51,20 +53,14 @@ const {
   return {
     mockDelete: deleteTable,
     mockDeleteWhere: deleteWhere,
+    mockExtract:
+      vi.fn<(input: { model?: string }) => Promise<ExtractionAttempt>>(),
     mockFindReceiptByIdForOwner:
       vi.fn<(id: string, ownerId: string) => Promise<unknown>>(),
     mockInsert: insert,
     mockInsertValues: insertValues,
-    mockParse: vi
-      .fn<(transcript: string, model?: string) => Promise<unknown>>()
-      .mockResolvedValue({}),
     mockSet: setValue,
     mockTransaction: transaction,
-    mockTranscribe: vi
-      .fn<
-        (base64: string, mimeType: string, model?: string) => Promise<string>
-      >()
-      .mockResolvedValue("FAKE OCR TRANSCRIPT"),
     mockUpdate: updateTable,
   };
 });
@@ -82,14 +78,12 @@ vi.mock(import("@/lib/db"), () => ({
   receipts: {},
 }));
 
-// @ts-expect-error mock types don't match the AI module's own signatures
-vi.mock(import("@/lib/ai/transcribe-receipt-image"), () => ({
-  parseReceiptText: mockParse,
-  transcribeReceiptImage: mockTranscribe,
+vi.mock(import("@/lib/ai/extract-receipt"), () => ({
+  extractReceipt: mockExtract,
 }));
 
 // Lets the `extracting` step run for real, which is the only way to observe
-// which model the OCR call was given.
+// which model the call was given.
 // @ts-expect-error mock types don't match the storage client
 vi.mock(import("@/lib/storage/client"), () => ({
   BUCKET: "receipts",
@@ -114,7 +108,24 @@ const mockExtraction: ReceiptInformationExtraction = {
   transaction: { datetime: "2025-01-15T10:30:00Z", receiptNumber: "ABC123" },
 };
 
-const mockPublish = vi.fn<() => Promise<void>>();
+const FAKE_TRANSCRIPT = "FAKE RECEIPT TEXT";
+
+/** What a successful call returns: the extraction plus the text it read. */
+const extracted = (
+  extraction: ReceiptInformationExtraction = mockExtraction
+): ExtractionAttempt => ({
+  extraction,
+  ok: true,
+  transcript: FAKE_TRANSCRIPT,
+});
+
+const unreadable = (
+  rawText: string | null,
+  reason = "response did not match the schema"
+): ExtractionAttempt => ({ ok: false, rawText, reason });
+
+const mockPublish =
+  vi.fn<(name: string, topic: unknown, payload: unknown) => Promise<void>>();
 
 const mockSendEvent = vi.fn<() => Promise<void>>().mockResolvedValue();
 
@@ -134,9 +145,7 @@ const baseSteps: StepStub[] = [
     id: "lookup-receipt",
   },
   { handler: () => null, id: "mark-processing" },
-  { handler: () => "FAKE OCR TRANSCRIPT", id: "extracting" },
-  { handler: () => mockExtraction, id: "parsing" },
-  { handler: () => null, id: "store-transcript" },
+  { handler: () => extracted(), id: "extracting" },
   { handler: () => null, id: "storing" },
 ];
 
@@ -155,7 +164,7 @@ const uploadedEvent = {
 
 const reprocessEvent = {
   data: {
-    models: { ocr: "big-vision", parse: "big-reasoner" },
+    model: "vendor/stronger-model",
     previousStatus: "done",
     receiptId: "00000000-0000-0000-0000-000000000001",
     userId: "user-1",
@@ -194,22 +203,31 @@ const createEngine = (
 const reprocess = (overrides?: Partial<StepStub>, realSteps: string[] = []) =>
   createEngine(overrides, realSteps, reprocessEvent);
 
+/** Every write that carried a transcript, whichever step made it. */
+const transcriptWrites = () =>
+  mockSet.mock.calls.filter(([payload]) => "transcript" in payload);
+
 describe("transcribeReceipt function", () => {
   beforeEach(() => {
     mockDelete.mockClear();
     mockDeleteWhere.mockClear();
+    mockExtract.mockClear();
+    mockExtract.mockResolvedValue(extracted());
+    mockFindReceiptByIdForOwner.mockClear();
     mockInsert.mockClear();
     mockInsertValues.mockClear();
-    mockParse.mockClear();
-    mockFindReceiptByIdForOwner.mockClear();
+    // The real `openRouterConfigured` reads this per call, so the credential is
+    // the environment rather than a mocked module. `vitest` does not load
+    // `.env.local`, so an unset value here is the real "not configured" case.
+    process.env.OPENROUTER_API_KEY = "test-key";
     mockSet.mockClear();
     mockTransaction.mockClear();
-    mockTranscribe.mockClear();
     mockUpdate.mockClear();
     mockSendEvent.mockClear();
+    mockPublish.mockClear();
   });
 
-  it("runs extracting → parsing → storing and returns the extraction", async () => {
+  it("runs extracting → storing and returns the extraction", async () => {
     const engine = createEngine();
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
@@ -218,6 +236,16 @@ describe("transcribeReceipt function", () => {
     expect(output.receiptId).toBe("00000000-0000-0000-0000-000000000001");
     expect(output.extraction).toStrictEqual(mockExtraction);
     expect(output.integrityWarning).toBeFalsy();
+  });
+
+  it("publishes one extraction stage, never a separate parsing one", async () => {
+    await createEngine().execute();
+
+    const states = mockPublish.mock.calls.map(
+      (call) => (call[2] as { state: string }).state
+    );
+
+    expect(states).toStrictEqual(["extracting", "storing", "done"]);
   });
 
   it("sets integrityWarning when line-sum mismatches total", async () => {
@@ -230,8 +258,8 @@ describe("transcribeReceipt function", () => {
     };
 
     const engine = createEngine({
-      handler: () => badExtraction,
-      id: "parsing",
+      handler: () => extracted(badExtraction),
+      id: "extracting",
     });
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
@@ -253,8 +281,8 @@ describe("transcribeReceipt function", () => {
     };
 
     const engine = createEngine({
-      handler: () => exactExtraction,
-      id: "parsing",
+      handler: () => extracted(exactExtraction),
+      id: "extracting",
     });
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
@@ -280,8 +308,8 @@ describe("transcribeReceipt function", () => {
     };
 
     const engine = createEngine({
-      handler: () => surchargeExtraction,
-      id: "parsing",
+      handler: () => extracted(surchargeExtraction),
+      id: "extracting",
     });
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
@@ -303,8 +331,8 @@ describe("transcribeReceipt function", () => {
     } as unknown as ReceiptInformationExtraction;
 
     const engine = createEngine({
-      handler: () => discounted,
-      id: "parsing",
+      handler: () => extracted(discounted),
+      id: "extracting",
     });
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
@@ -326,32 +354,14 @@ describe("transcribeReceipt function", () => {
     } as unknown as ReceiptInformationExtraction;
 
     const engine = createEngine({
-      handler: () => positiveDiscount,
-      id: "parsing",
+      handler: () => extracted(positiveDiscount),
+      id: "extracting",
     });
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
 
     expect(output.extraction.items[1].kind).toBe("discount");
     expect(output.extraction.items[1].lineTotal).toBe(-2);
-    expect(output.integrityWarning).toBeFalsy();
-  });
-
-  it("defaults a missing kind and quantity on an extracted line", async () => {
-    const sparse = {
-      items: [{ lineTotal: 10, name: "Product" }],
-      merchant: { name: "Store" },
-      payment: { method: "other" },
-      totals: { total: 10 },
-      transaction: {},
-    } as unknown as ReceiptInformationExtraction;
-
-    const engine = createEngine({ handler: () => sparse, id: "parsing" });
-    const { result } = await engine.execute();
-    const output = result as FunctionOutput;
-
-    expect(output.extraction.items[0].kind).toBe("product");
-    expect(output.extraction.items[0].quantity).toBe(1);
     expect(output.integrityWarning).toBeFalsy();
   });
 
@@ -366,7 +376,10 @@ describe("transcribeReceipt function", () => {
       transaction: {},
     } as unknown as ReceiptInformationExtraction;
 
-    const engine = createEngine({ handler: () => nullQuantity, id: "parsing" });
+    const engine = createEngine({
+      handler: () => extracted(nullQuantity),
+      id: "extracting",
+    });
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
 
@@ -382,7 +395,10 @@ describe("transcribeReceipt function", () => {
       transaction: {},
     } as unknown as ReceiptInformationExtraction;
 
-    const engine = createEngine({ handler: () => sparse, id: "parsing" });
+    const engine = createEngine({
+      handler: () => extracted(sparse),
+      id: "extracting",
+    });
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
 
@@ -404,8 +420,8 @@ describe("transcribeReceipt function", () => {
     };
 
     const engine = createEngine({
-      handler: () => fullExtraction,
-      id: "parsing",
+      handler: () => extracted(fullExtraction),
+      id: "extracting",
     });
     const { result } = await engine.execute();
     const output = result as FunctionOutput;
@@ -426,30 +442,100 @@ describe("transcribeReceipt function", () => {
     expect(output.extraction.merchant.name).toBe("Test Cafe");
   });
 
-  it("stores the OCR transcript as soon as it is produced", async () => {
-    const engine = createEngine(undefined, ["store-transcript"]);
-    await engine.execute();
+  it("writes the transcript with the extraction, inside the store", async () => {
+    await createEngine(undefined, ["storing"]).execute();
 
-    expect(mockSet).toHaveBeenCalledWith({ transcript: "FAKE OCR TRANSCRIPT" });
+    const writes = transcriptWrites();
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0][0]).toStrictEqual(
+      expect.objectContaining({ transcript: FAKE_TRANSCRIPT })
+    );
+    expect(mockSet.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mockTransaction.mock.invocationCallOrder[0]
+    );
   });
 
-  it("keeps the OCR transcript of a first extraction when parsing fails", async () => {
-    // ADR-0008: there is nothing else on the row, so the OCR text is the only
-    // evidence of what the image said. A re-process has the opposite case — a
-    // transcript that matches data still stored — and defers its write.
-    const engine = createEngine(
-      {
-        handler: () => {
-          throw new Error("parse blew up");
-        },
-        id: "parsing",
-      },
-      ["store-transcript"]
+  it("keeps the raw text of a first extraction whose response was unusable", async () => {
+    // One call reads and structures, so a response that fails the schema is the
+    // only record of what the model saw. ADR-0008's diagnosis survives as this
+    // write, and it happens before the run fails.
+    mockExtract.mockResolvedValueOnce(unreadable("GARBAGE OUTPUT"));
+
+    const { error } = await createEngine(undefined, [
+      "extracting",
+      "store-failed-transcript",
+    ]).execute();
+
+    expect(error).toBeDefined();
+    expect(transcriptWrites()).toStrictEqual([
+      [{ transcript: "GARBAGE OUTPUT" }],
+    ]);
+  });
+
+  it("writes nothing when an unusable response carried no text", async () => {
+    mockExtract.mockResolvedValueOnce(unreadable(null));
+
+    const { error } = await createEngine(undefined, [
+      "extracting",
+      "store-failed-transcript",
+    ]).execute();
+
+    expect(error).toBeDefined();
+    expect(transcriptWrites()).toStrictEqual([]);
+  });
+
+  it("fails the receipt when no extraction credential is configured", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+
+    const { error } = await createEngine(undefined, [
+      "mark-processing",
+    ]).execute();
+
+    expect(error).toBeDefined();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockExtract).not.toHaveBeenCalled();
+  });
+
+  it("lets a transient provider failure through, so Inngest retries it", async () => {
+    // The SDK wraps its last failure in a `RetryError`; classifying the wrapper
+    // as permanent would quietly delete the retry ADR-0022 depends on.
+    const retryable = new RetryError({
+      errors: [
+        new APICallError({
+          isRetryable: true,
+          message: "rate limited",
+          requestBodyValues: {},
+          statusCode: 429,
+          url: "https://openrouter.ai/api/v1/chat/completions",
+        }),
+      ],
+      message: "Failed after 2 attempts.",
+      reason: "maxRetriesExceeded",
+    });
+    mockExtract.mockRejectedValueOnce(retryable);
+
+    const { error } = await createEngine(undefined, ["extracting"]).execute();
+
+    expect(error).toBeDefined();
+    expect(error).not.toBeInstanceOf(NonRetriableError);
+    expect((error as Error).name).toBe("AI_RetryError");
+  });
+
+  it("fails a request the provider refused, rather than retrying it", async () => {
+    mockExtract.mockRejectedValueOnce(
+      new APICallError({
+        isRetryable: false,
+        message: "bad request",
+        requestBodyValues: {},
+        statusCode: 400,
+        url: "https://openrouter.ai/api/v1/chat/completions",
+      })
     );
 
-    await engine.execute().catch(() => {});
+    const { error } = await createEngine(undefined, ["extracting"]).execute();
 
-    expect(mockSet).toHaveBeenCalledWith({ transcript: "FAKE OCR TRANSCRIPT" });
+    expect((error as Error).name).toBe("NonRetriableError");
   });
 
   it("refuses a receipt that does not belong to the event's user", async () => {
@@ -498,35 +584,22 @@ describe("transcribeReceipt function", () => {
     );
   });
 
-  it("runs the configured models when the receipt was just uploaded", async () => {
-    mockParse.mockResolvedValueOnce(mockExtraction);
-
-    await createEngine(undefined, ["extracting", "parsing"]).execute();
+  it("runs the configured model when the receipt was just uploaded", async () => {
+    await createEngine(undefined, ["extracting"]).execute();
 
     // `undefined` rather than a model id: leaving the argument off is what
     // hands the call its environment default.
-    expect(mockTranscribe).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.any(String),
-      undefined
+    expect(mockExtract).toHaveBeenCalledWith(
+      expect.objectContaining({ model: undefined })
     );
-    expect(mockParse).toHaveBeenCalledWith("FAKE OCR TRANSCRIPT", undefined);
   });
 
   describe("re-processing", () => {
-    it("uses the models the run was started with", async () => {
-      mockParse.mockResolvedValueOnce(mockExtraction);
+    it("uses the model the run was started with", async () => {
+      await reprocess(undefined, ["extracting"]).execute();
 
-      await reprocess(undefined, ["extracting", "parsing"]).execute();
-
-      expect(mockTranscribe).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.any(String),
-        "big-vision"
-      );
-      expect(mockParse).toHaveBeenCalledWith(
-        "FAKE OCR TRANSCRIPT",
-        "big-reasoner"
+      expect(mockExtract).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "vendor/stronger-model" })
       );
     });
 
@@ -575,27 +648,33 @@ describe("transcribeReceipt function", () => {
     it("writes the transcript with the extraction it belongs to", async () => {
       await reprocess(undefined, ["storing"]).execute();
 
-      expect(mockSet).toHaveBeenCalledWith(
-        expect.objectContaining({ transcript: "FAKE OCR TRANSCRIPT" })
+      const writes = transcriptWrites();
+
+      expect(writes).toHaveLength(1);
+      expect(writes[0][0]).toStrictEqual(
+        expect.objectContaining({ transcript: FAKE_TRANSCRIPT })
       );
     });
 
-    it("leaves the stored transcript alone until the new extraction is stored", async () => {
+    it("leaves the stored transcript alone when the new extraction fails", async () => {
       // The transcript on the row describes the extraction on the row. Writing
-      // the new one early and then failing would leave a receipt that reads as
-      // `done`, with the previous extraction and a transcript that produced
-      // nothing.
-      await reprocess(undefined, ["store-transcript", "storing"]).execute();
+      // a failed attempt's text over it would leave a receipt reading as `done`
+      // with the previous extraction and text that produced nothing (ADR-0011).
+      mockExtract.mockResolvedValueOnce(unreadable("NEW BAD OUTPUT"));
 
-      expect(mockSet).not.toHaveBeenCalledWith({
-        transcript: "FAKE OCR TRANSCRIPT",
-      });
+      const { error } = await reprocess(undefined, [
+        "extracting",
+        "store-failed-transcript",
+      ]).execute();
+
+      expect(error).toBeDefined();
+      expect(transcriptWrites()).toStrictEqual([]);
     });
 
     it("nulls every flat field so an omitted one is cleared, not kept", async () => {
       // `receiptToFlat` must null rather than leave undefined, because Drizzle
       // drops undefined from an update — which would keep the previous bad
-      // extraction's value for anything the new parse omitted.
+      // extraction's value for anything the new call omitted.
       const sparse = {
         items: [
           { kind: "product", lineTotal: 10, name: "Product", quantity: 1 },
@@ -606,7 +685,7 @@ describe("transcribeReceipt function", () => {
         transaction: {},
       } as unknown as ReceiptInformationExtraction;
 
-      await reprocess({ handler: () => sparse, id: "parsing" }, [
+      await reprocess({ handler: () => extracted(sparse), id: "extracting" }, [
         "storing",
       ]).execute();
 

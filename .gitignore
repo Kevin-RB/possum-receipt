@@ -2,8 +2,10 @@ node_modules/
 dist/
 .next/
 *.tsbuildinfo
-.env
-.env.local
+# Every env file is local: development in `.env.local`, the Vercel import
+# payload in `.env.production`. None of them is committed. If a template is
+# ever wanted in the repo, add it below with `!.env.example`.
+.env*
 .DS_Store
 prototype/
 Receipts/

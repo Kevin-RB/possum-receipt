@@ -13,8 +13,8 @@ describe(statusBadge, () => {
   });
 
   it("shows the run's stage in place of the stored status", () => {
-    expect(statusBadge("processing", "parsing")).toStrictEqual({
-      label: "parsing",
+    expect(statusBadge("processing", "extracting")).toStrictEqual({
+      label: "extracting",
       variant: "secondary",
     });
   });
@@ -55,7 +55,6 @@ describe(statusBadge, () => {
       "done",
       "extracting",
       "failed",
-      "parsing",
       "storing",
     ];
 

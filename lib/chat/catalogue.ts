@@ -1,8 +1,25 @@
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 
-import { lmstudio } from "@/lib/ai/provider";
+import { OPENROUTER_ROUTING } from "@/lib/ai/provider";
+
+/**
+ * Chat's local testing target, not part of the extraction path.
+ *
+ * Extraction and categorization moved to OpenRouter (ADR-0022), so LM Studio is
+ * read here and nowhere else in the app: a chat reader in development can
+ * compare the two ends of the range from one picker.
+ */
+export const LM_STUDIO_URL =
+  process.env.LM_STUDIO_URL ?? "http://localhost:1234/v1";
+
+const lmstudio = createOpenAICompatible({
+  baseURL: LM_STUDIO_URL,
+  name: "lmstudio",
+  supportsStructuredOutputs: true,
+});
 
 /**
  * The app-owned catalogue of chat models (ADR-0017). This is the only place a
@@ -61,16 +78,6 @@ export const chatSelectionSchema = z.object({
 });
 
 export type ChatSelection = z.infer<typeof chatSelectionSchema>;
-
-/**
- * `require_parameters` stops OpenRouter routing to an endpoint that ignores
- * tools; `zdr` keeps the request on endpoints that do not retain prompts.
- * Both are unconditional, which is why every remote entry is curated to have at
- * least one endpoint supporting both.
- */
-const OPENROUTER_ROUTING = {
-  provider: { require_parameters: true, zdr: true },
-} as const;
 
 /**
  * A map from provider to "build a model" rather than `createProviderRegistry`:

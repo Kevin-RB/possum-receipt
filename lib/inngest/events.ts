@@ -1,7 +1,7 @@
 import { eventType } from "inngest";
 import { z } from "zod/v4";
 
-import { extractionModelsSchema } from "@/lib/ai/models";
+import { extractionModelIdSchema } from "@/lib/ai/models";
 
 /**
  * The events the pipeline is built from, kept apart from the functions that
@@ -20,7 +20,7 @@ export const receiptUploadedEvent = eventType("receipt/uploaded", {
 /**
  * A second run of extraction over a receipt that is already stored.
  *
- * The models travel with the event rather than being read from the environment
+ * The model travels with the event rather than being read from the environment
  * at run time, so a re-process can use a stronger model than a first extraction
  * without a redeploy. `previousStatus` is what the run restores if it fails: the
  * stored extraction is only replaced in the final write, so a failure leaves
@@ -28,7 +28,7 @@ export const receiptUploadedEvent = eventType("receipt/uploaded", {
  */
 export const receiptReprocessEvent = eventType("receipt/reprocess", {
   schema: z.object({
-    models: extractionModelsSchema,
+    model: extractionModelIdSchema,
     previousStatus: z.enum(["done", "error"]),
     receiptId: z.string(),
     userId: z.string(),

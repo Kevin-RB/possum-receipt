@@ -3,8 +3,7 @@
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
-import { listAvailableModels } from "@/lib/ai/models";
-import { ORC_MODEL, PARSE_MODEL } from "@/lib/ai/provider";
+import { EXTRACT_MODEL, extractionSelections } from "@/lib/ai/models";
 import { getSession } from "@/lib/auth/dal";
 import { db, receipts } from "@/lib/db";
 import { reportError, USER_ERROR } from "@/lib/errors";
@@ -46,29 +45,27 @@ export const deleteReceipt = async (receiptId: string) => {
 };
 
 /**
- * The models the re-process picker offers: exactly what the provider reports,
- * since a model it has not loaded would only fail at request time.
+ * The models the re-process picker offers: the app's own catalogue, with the
+ * configured extraction model first.
  *
- * An empty list means the provider could not be asked, and the dialog says so
- * rather than filling the select with models the trigger would refuse — the
- * action rejects the run outright in that case, because nothing can run without
- * the provider.
+ * The list is no longer a question put to a model server. Extraction calls a
+ * remote provider (ADR-0022), so the only models that can run are the ones this
+ * app curates — and the trigger refuses anything outside them.
  *
  * Server actions are HTTP endpoints, so this one is as reachable as any other
- * without a session. It answers with the ids the model server has loaded and the
- * models this app is configured to use, which is not an anonymous answer, so an
- * unauthenticated caller gets an empty list rather than either.
+ * without a session. It answers with the app's configured model, which is not
+ * an anonymous answer, so an unauthenticated caller gets nothing.
  */
 export const listExtractionModels = async () => {
   const session = await getSession();
 
   if (!session) {
-    return { available: [], defaults: { ocr: "", parse: "" } };
+    return { available: [], selected: "" };
   }
 
   return {
-    available: await listAvailableModels(),
-    defaults: { ocr: ORC_MODEL, parse: PARSE_MODEL },
+    available: extractionSelections(),
+    selected: EXTRACT_MODEL,
   };
 };
 
@@ -82,10 +79,11 @@ export const listExtractionModels = async () => {
  * `pending` or `processing` with nothing behind it, and no other path in the app
  * moves it — so the claim has to expire, or the receipt is a dead end.
  *
- * Generous on purpose. A local extraction runs for six to ten minutes, and
- * taking a claim that is genuinely still running produces two runs against one
- * receipt; waiting longer costs the owner a cooldown, taking it too early costs
- * them their data.
+ * Generous on purpose. A run is seconds now that extraction is one remote call
+ * (ADR-0022), but the lease also covers the queue: a receipt can sit `pending`
+ * for as long as the runs ahead of it take, and taking a claim that is genuinely
+ * still running produces two runs against one receipt. Waiting longer costs the
+ * owner a cooldown; taking it too early costs them their data.
  */
 const PROCESSING_LEASE_MS = 30 * 60 * 1000;
 
@@ -114,7 +112,7 @@ export const reprocessReceipt = async (input: unknown) => {
     return { error: USER_ERROR.invalidInput, success: false as const };
   }
 
-  const { models, receiptId } = parsed.data;
+  const { model, receiptId } = parsed.data;
 
   const receipt = await db.query.receipts.findFirst({
     where: { id: receiptId, userId: session.user.id },
@@ -138,23 +136,12 @@ export const reprocessReceipt = async (input: unknown) => {
     };
   }
 
-  // Checked against what the provider actually has loaded rather than trusted
-  // from the picker: a run cannot get anywhere without LM Studio, so asking now
-  // turns an opaque provider error into a message naming the real problem. An
-  // empty list means the question could not be asked at all, which is a
-  // different fault from the model not being loaded and must not read as one.
-  const reported = await listAvailableModels();
-
-  if (reported.length === 0) {
-    return {
-      error: USER_ERROR.modelServerUnreachable,
-      success: false as const,
-    };
-  }
-
-  const available = new Set(reported);
-
-  if (!available.has(models.ocr) || !available.has(models.parse)) {
+  // Checked against the app's own catalogue rather than trusted from the
+  // picker: the picker is a client, and a run naming a model the catalogue does
+  // not hold has no provider behind it. The check is local now — extraction is
+  // a remote call, so there is no model server to ask and no "unreachable"
+  // answer to tell apart from a missing model (ADR-0022).
+  if (!extractionSelections().includes(model)) {
     return { error: USER_ERROR.modelNotAvailable, success: false as const };
   }
 
@@ -201,7 +188,7 @@ export const reprocessReceipt = async (input: unknown) => {
     await inngest.send([
       receiptReprocessEvent.create(
         {
-          models,
+          model,
           // Restored by the function's failure handler, so a run that fails
           // leaves the receipt as findable as it was before. A receipt taken
           // over from an expired claim has no usable prior status — the run

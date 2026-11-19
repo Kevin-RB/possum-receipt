@@ -1,60 +1,72 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { listAvailableModels } from "./models";
+const DEEPSEEK = "deepseek/deepseek-v4.1-flash-1017";
 
-const mockFetch = vi.hoisted(() => vi.fn<() => Promise<Response>>());
+const importModels = () => import("./models");
 
-vi.stubGlobal("fetch", mockFetch);
+const originalModel = process.env.EXTRACT_MODEL;
 
-const jsonResponse = (body: unknown, ok = true) =>
-  ({
-    json: () => Promise.resolve(body),
-    ok,
-  }) as Response;
-
-describe(listAvailableModels, () => {
-  beforeEach(() => {
-    mockFetch.mockReset();
+describe("extraction models", () => {
+  afterEach(() => {
+    if (originalModel === undefined) {
+      delete process.env.EXTRACT_MODEL;
+    } else {
+      process.env.EXTRACT_MODEL = originalModel;
+    }
+    vi.resetModules();
   });
 
-  it("returns the ids LM Studio reports, without duplicates", async () => {
-    mockFetch.mockResolvedValue(
-      jsonResponse({
-        data: [
-          { id: "glm-ocr" },
-          { id: "google/gemma-4-e4b" },
-          { id: "glm-ocr" },
-        ],
-      })
-    );
+  it("defaults a first extraction to the dated DeepSeek revision", async () => {
+    delete process.env.EXTRACT_MODEL;
+    vi.resetModules();
 
-    await expect(listAvailableModels()).resolves.toStrictEqual([
-      "glm-ocr",
-      "google/gemma-4-e4b",
+    const { EXTRACT_MODEL, extractionSelections } = await importModels();
+
+    expect(EXTRACT_MODEL).toBe(DEEPSEEK);
+    expect(extractionSelections()).toStrictEqual([DEEPSEEK]);
+  });
+
+  it("defaults categorization to the extraction model", async () => {
+    delete process.env.EXTRACT_MODEL;
+    delete process.env.CATEGORIZE_MODEL;
+    vi.resetModules();
+
+    const { CATEGORIZE_MODEL, EXTRACT_MODEL } = await importModels();
+
+    expect(CATEGORIZE_MODEL).toBe(EXTRACT_MODEL);
+  });
+
+  it("offers the configured model first, then the catalogue", async () => {
+    process.env.EXTRACT_MODEL = "vendor/stronger-model";
+    vi.resetModules();
+
+    const { extractionSelections } = await importModels();
+
+    expect(extractionSelections()).toStrictEqual([
+      "vendor/stronger-model",
+      DEEPSEEK,
     ]);
   });
 
-  it("returns an empty list when the provider reports an error", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ error: "nope" }, false));
+  it("does not repeat a configured model the catalogue already holds", async () => {
+    process.env.EXTRACT_MODEL = DEEPSEEK;
+    vi.resetModules();
 
-    await expect(listAvailableModels()).resolves.toStrictEqual([]);
+    const { extractionSelections } = await importModels();
+
+    expect(extractionSelections()).toStrictEqual([DEEPSEEK]);
   });
 
-  it("returns an empty list when the provider is unreachable", async () => {
-    mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+  it("bounds a model id so a client cannot send an arbitrary string", async () => {
+    delete process.env.EXTRACT_MODEL;
+    vi.resetModules();
 
-    await expect(listAvailableModels()).resolves.toStrictEqual([]);
-  });
+    const { extractionModelIdSchema } = await importModels();
 
-  it("returns an empty list when the response has no model array", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ data: "not-an-array" }));
-
-    await expect(listAvailableModels()).resolves.toStrictEqual([]);
-  });
-
-  it("returns an empty list when a model entry has no id", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ data: [{ nope: true }] }));
-
-    await expect(listAvailableModels()).resolves.toStrictEqual([]);
+    expect(extractionModelIdSchema.safeParse("").success).toBeFalsy();
+    expect(
+      extractionModelIdSchema.safeParse("a".repeat(201)).success
+    ).toBeFalsy();
+    expect(extractionModelIdSchema.safeParse(DEEPSEEK).success).toBeTruthy();
   });
 });

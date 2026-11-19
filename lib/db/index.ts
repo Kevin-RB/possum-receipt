@@ -1,3 +1,4 @@
+import { attachDatabasePool } from "@vercel/functions";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import "temporal-polyfill/global";
@@ -20,6 +21,11 @@ const createDb = (connectionString: string) => {
     connectionString,
     max: 10,
   });
+  // Vercel suspends a function instance between requests. Without this, every
+  // idle client in this pool stays checked out against Neon, whose free plan
+  // counts connections — a handful of warm instances would exhaust it. On any
+  // other host, including local development, it is a no-op.
+  attachDatabasePool(pool);
   return drizzle({ client: pool, relations });
 };
 
@@ -55,6 +61,29 @@ export const listReceipts = (ownerId: string) =>
   db.query.receipts.findMany({
     orderBy: (table, { desc: orderDesc }) => [orderDesc(table.createdAt)],
     where: { userId: ownerId },
+  });
+
+/**
+ * The owner's receipts whose upload signal has not settled, and whose presigned
+ * URL has expired.
+ *
+ * `/receipts` reconciles these on every visit (ADR-0021). `uploading` means the
+ * browser's call never arrived (or arrived too early), so the row is verified
+ * with `HeadObject`; `pending` with no run behind it means the promotion
+ * committed but its enqueue did not, and the only thing left is to send again.
+ * Before the presign window closes an `uploading` row may legitimately be
+ * mid-upload, so only older rows are touched. Owner-scoped like every other
+ * read, and columns are trimmed to what the reconciliation needs — it does not
+ * render them.
+ */
+export const listStaleUploadSignalReceipts = (ownerId: string, before: Date) =>
+  db.query.receipts.findMany({
+    columns: { id: true, objectKey: true, status: true, userId: true },
+    where: {
+      createdAt: { lt: before },
+      status: { in: ["uploading", "pending"] },
+      userId: ownerId,
+    },
   });
 
 /**

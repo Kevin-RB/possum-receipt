@@ -80,12 +80,14 @@ services:
       BETTER_AUTH_SECRET: ${SERVICE_PASSWORD_64_BETTERAUTH:?}
       INVITE_CODE: ${INVITE_CODE:?}
       LM_STUDIO_URL: ${LM_STUDIO_URL:-http://host.docker.internal:1234/v1}
-      ORC_MODEL: ${ORC_MODEL:-glm-ocr}
-      PARSE_MODEL: ${PARSE_MODEL:-google/gemma-4-e4b}
-      CATEGORIZE_MODEL: ${CATEGORIZE_MODEL:-google/gemma-4-e4b}
-      # App-owned credential for the chat catalogue's remote provider. Unset
-      # means only `local` is registered, so chat falls back to LM Studio.
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EXTRACT_MODEL: ${EXTRACT_MODEL:-deepseek/deepseek-v4.1-flash-1017}
+      CATEGORIZE_MODEL: ${CATEGORIZE_MODEL:-deepseek/deepseek-v4.1-flash-1017}
+      # App-owned credential for chat, extraction and categorization
+      # (ADR-0022). Required, not optional: extraction has no local fallback, so
+      # a deployment without it comes up green and then fails every receipt with
+      # "Receipt extraction is not configured". `:?` turns that into a refused
+      # deploy instead.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?}
     extra_hosts:

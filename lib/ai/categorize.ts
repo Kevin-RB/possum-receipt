@@ -2,7 +2,8 @@ import { generateText, Output } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 
-import { CATEGORIZE_MODEL, lmstudio } from "./provider";
+import { CATEGORIZE_MODEL } from "./models";
+import { extractionModel } from "./provider";
 
 export interface CategoryOption {
   name: string;
@@ -65,7 +66,7 @@ const chunkItems = <T>(items: T[], size: number): T[][] => {
 export const categorizeItems = async (
   items: CategorizeItem[],
   options: CategoryOption[],
-  model: LanguageModel = lmstudio.chatModel(CATEGORIZE_MODEL),
+  model: LanguageModel = extractionModel(CATEGORIZE_MODEL, "categorize"),
   chunkSize = CATEGORIZE_CHUNK_SIZE
 ): Promise<(string | null)[]> => {
   if (items.length === 0) {

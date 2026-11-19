@@ -19,7 +19,9 @@ export interface ContentSecurityPolicyOptions {
 }
 
 // Endpoints may be scheme-less (`localhost:9000`, `rustfs:9000`) or full URLs,
-// matching `lib/storage/client.ts`.
+// matching `lib/storage/client.ts`. In production the value is R2's endpoint
+// (`https://<account-id>.r2.cloudflarestorage.com`) — a presigned URL is signed
+// for that host, so it cannot be replaced by a custom domain.
 const withScheme = (endpoint: string): string =>
   /^https?:\/\//iu.test(endpoint) ? endpoint : `http://${endpoint}`;
 
