@@ -14,7 +14,7 @@ A local-first web app that turns photos of paper receipts into structured, persi
 
 **Presigned URL**: A short-lived, server-signed URL that grants the browser permission to write one specific object key to object storage without exposing real credentials. _Avoid_: Upload token, signed link.
 
-**Bucket notification**: An event object storage sends after an object is created — posted to a configured webhook (RustFS), or queued and forwarded by a Worker (R2). The server uses it, through the provider's adapter, as the authoritative signal that an upload finished. _Avoid_: Storage webhook, SQS event, object event.
+**Bucket notification**: An event object storage sends after an object is created — posted to a configured webhook (RustFS), or queued and forwarded by a Worker (R2). The server uses it, through the provider's adapter, as the authoritative signal that an upload finished. Under R2, which has no such notification on the free plan, the promotion is a verified browser call with page-load reconciliation instead (ADR-0021). _Avoid_: Storage webhook, SQS event, object event.
 
 **Storage event**: The app's own form of a bucket notification: an object finished uploading, named by its object key. Each provider's bucket notification is turned into one by that provider's adapter, and the webhook acts on nothing else. A notification that is not an upload becomes no storage event and is ignored. _Avoid_: Upload event (it collides with `receipt/uploaded`, the Inngest event the webhook sends after finding the receipt), bucket event, provider event.
 

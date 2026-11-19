@@ -1,4 +1,4 @@
-# ADR-0020: Upload-finished is verified, not notified
+# ADR-0021: Upload-finished is verified, not notified
 
 Date: 2026-11-19
 
@@ -21,6 +21,8 @@ The flow the signal has to fit is already in place. `POST /api/upload` inserts t
 An optimistic promotion — flipping the row to `pending` because the browser said its `PUT` succeeded — was the obvious cheap option and is not taken. `pending` is read by the receipts table and the realtime subscription as "queued for extraction", and the extraction run then treats the object as present. A row that says `pending` without an object turns one claim into a failed run, a retry that looks like a storage fault, and an `error` nobody can explain. The status is worth one `HEAD`.
 
 The owner decided on 2026-11-19 that images stay on R2, that the upload signal becomes a browser call plus reconciliation, and that the monthly cost is $0. The paid Queue flow was explicitly declined. This ADR records that decision and supersedes the Queue-and-consumer half of the storage decision in [#240](https://github.com/Kevin-RB/possum-receipt/issues/240).
+
+ADR-0020 recorded the app-owned storage event with one adapter per provider, and its `r2Adapter` was written against the Queue message a forwarding Worker would deliver (#252). The RustFS adapter and the app-owned event shape stand: RustFS still calls the webhook in local development, and the event it produces is still what the route acts on. The `r2Adapter` and the Worker it names do not, because nothing will ever call them now that no Queue exists. `lib/storage/event.ts` therefore keeps the RustFS adapter alone.
 
 ## Decision
 
@@ -59,4 +61,5 @@ The owner decided on 2026-11-19 that images stay on R2, that the upload signal b
 - [#253](https://github.com/Kevin-RB/possum-receipt/issues/253) (backups bucket, bucket locks and lifecycle rules).
 - ADR-0001 (upload via presigned URL and bucket notification) — the presigned-upload design this refines.
 - ADR-0006 (migrate object storage to RustFS) — the webhook this replaces in production.
+- ADR-0020 (the app owns its storage-event format) — its RustFS adapter stands; its `r2Adapter` and the Queue-forwarding Worker it names are retired by this decision.
 - `docs/guides/r2-bucket-and-token.md` — the bucket and token setup this decision depends on.
