@@ -104,7 +104,7 @@ describe(resolveToastBody, () => {
 
   it("reports a socket error while a run is mid-flight", () => {
     // A dropped socket is news even though the stages are not.
-    expect(body({ error: connectionError(), state: "parsing" })?.title).toBe(
+    expect(body({ error: connectionError(), state: "extracting" })?.title).toBe(
       "Connection error"
     );
   });
@@ -112,7 +112,7 @@ describe(resolveToastBody, () => {
   it("announces nothing while the run is only progressing", () => {
     // Interstitial loading states stay out of the live region (guide §8): the
     // upload card shows them, and only an outcome is a toast.
-    for (const state of ["storing", "extracting", "parsing"] as const) {
+    for (const state of ["storing", "extracting"] as const) {
       expect(body({ state })).toBeNull();
     }
     expect(body({})).toBeNull();
@@ -124,9 +124,6 @@ describe(resolveProgressLabel, () => {
     expect(resolveProgressLabel("storing")).toBe("Engraving data in stone…");
     expect(resolveProgressLabel("extracting")).toBe(
       "Gnomes are extracting data…"
-    );
-    expect(resolveProgressLabel("parsing")).toBe(
-      "A magic cat is taking a look at your receipt…"
     );
   });
 

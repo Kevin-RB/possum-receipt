@@ -14,11 +14,11 @@ export const USER_ERROR = {
   /** A provider that is rate limited or briefly down: waiting is an instruction. */
   busy: "The assistant is busy right now. Please try again in a moment.",
   deleteFailed: "Failed to delete receipt",
+  extractionUnavailable: "Receipt extraction is not configured",
   /** Nothing more specific is known, or the cause is not ours to describe. */
   generic: "Something went wrong. Please try again.",
   invalidInput: "Validation failed",
   modelNotAvailable: "That model is not available",
-  modelServerUnreachable: "The model server is not reachable",
   modelUnavailable:
     "The assistant's model isn't responding right now. Please try again in a moment.",
   notFound: "Receipt not found",

@@ -186,11 +186,10 @@ Most values fall back to a working local default. The rows marked `—` have non
 | `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | `rustfsadmin` (does **not** match local compose — see below) | The app's IAM identity — least privilege, not root |
 | `STORAGE_BUCKET` | `receipts` | Bucket holding receipt images |
 | `STORAGE_WEBHOOK_SECRET` | — | Bearer token RustFS sends on bucket notifications |
-| `LM_STUDIO_URL` | `http://localhost:1234/v1` | Local model server |
-| `ORC_MODEL` | `glm-ocr` | Vision model for transcription |
-| `PARSE_MODEL` | `google/gemma-4-e4b` | Model that turns a transcript into the contract |
-| `CATEGORIZE_MODEL` | `PARSE_MODEL` | Model for categorization |
-| `OPENROUTER_API_KEY` | — | App-owned credential for remote chat models. Unset means chat runs on the local model only |
+| `LM_STUDIO_URL` | `http://localhost:1234/v1` | Local model server — chat's `local` entry only; extraction does not use it |
+| `EXTRACT_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Model that reads the image and returns the extraction contract |
+| `CATEGORIZE_MODEL` | `EXTRACT_MODEL` | Model for categorization |
+| `OPENROUTER_API_KEY` | — | App-owned credential for chat, extraction and categorization. Extraction has no fallback without it |
 | `INNGEST_DEV` | — | Set to `1` to talk to the local dev server instead of Inngest Cloud. Required locally, or the SDK assumes Cloud and wants an event key |
 | `INNGEST_BASE_URL` | — | The local Inngest dev server, `http://localhost:8288`. Paired with `INNGEST_DEV=1` |
 | `SEED_DATABASE_URL` | `…/receipts_seed` | Target for `pnpm db:seed` |

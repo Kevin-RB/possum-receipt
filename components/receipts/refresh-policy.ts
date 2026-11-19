@@ -12,7 +12,7 @@ export type RefreshNeed = "none" | "schedule";
  * Whether a receipt's transition owes the page a server refresh.
  *
  * The live stage is rendered client-side from the message, so nothing needs a
- * refresh while a run is `extracting`/`parsing`/`storing`. Two transitions do:
+ * refresh while a run is `extracting`/`storing`. Two transitions do:
  *
  * - **Terminal.** `done` means the run committed the stored row — status,
  *   totals, merchant, integrity — and the message carries the stage, not that

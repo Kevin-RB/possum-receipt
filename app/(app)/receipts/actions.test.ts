@@ -8,7 +8,6 @@ const {
   mockDeleteWhere,
   mockFindFirst,
   mockGetSession,
-  mockListAvailableModels,
   mockRevalidatePath,
   mockReturning,
   mockSend,
@@ -52,9 +51,6 @@ const {
     mockGetSession: vi
       .fn<() => Promise<{ user: { id: string } } | null>>()
       .mockResolvedValue({ user: { id: "user-1" } }),
-    mockListAvailableModels: vi
-      .fn<() => Promise<string[]>>()
-      .mockResolvedValue(["glm-ocr", "google/gemma-4-e4b"]),
     mockReturning: returning,
     mockRevalidatePath: vi.fn<(path: string) => undefined>(),
     mockSend: vi.fn<(events: unknown) => Promise<void>>().mockResolvedValue(),
@@ -90,11 +86,6 @@ vi.mock(import("@/lib/storage/client"), () => ({
 
 vi.mock(import("next/cache"), () => ({
   revalidatePath: mockRevalidatePath,
-}));
-
-vi.mock(import("@/lib/ai/models"), async (importOriginal) => ({
-  ...(await importOriginal()),
-  listAvailableModels: mockListAvailableModels,
 }));
 
 // @ts-expect-error mock types don't match Inngest internals
@@ -199,10 +190,9 @@ describe(deleteReceipt, () => {
   });
 });
 
-const input = {
-  models: { ocr: "glm-ocr", parse: "google/gemma-4-e4b" },
-  receiptId,
-};
+const DEEPSEEK = "deepseek/deepseek-v4.1-flash-1017";
+
+const input = { model: DEEPSEEK, receiptId };
 
 describe(reprocessReceipt, () => {
   beforeEach(() => {
@@ -213,11 +203,6 @@ describe(reprocessReceipt, () => {
       objectKey: "abc.jpg",
       status: "done",
     });
-    mockListAvailableModels.mockClear();
-    mockListAvailableModels.mockResolvedValue([
-      "glm-ocr",
-      "google/gemma-4-e4b",
-    ]);
     mockRevalidatePath.mockClear();
     mockReturning.mockClear();
     mockReturning.mockResolvedValue([{ id: receiptId }]);
@@ -363,24 +348,8 @@ describe(reprocessReceipt, () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 
-  it("says the server is unreachable rather than blaming the model", async () => {
-    mockListAvailableModels.mockResolvedValueOnce([]);
-
-    const result = await reprocessReceipt(input);
-
-    expect(result).toStrictEqual({
-      error: "The model server is not reachable",
-      success: false,
-    });
-    expect(mockUpdate).not.toHaveBeenCalled();
-    expect(mockSend).not.toHaveBeenCalled();
-  });
-
-  it("refuses a model the provider does not report", async () => {
-    const result = await reprocessReceipt({
-      ...input,
-      models: { ocr: "made-up-model", parse: "google/gemma-4-e4b" },
-    });
+  it("refuses a model outside the app's catalogue", async () => {
+    const result = await reprocessReceipt({ ...input, model: "made-up-model" });
 
     expect(result).toStrictEqual({
       error: "That model is not available",
@@ -425,7 +394,7 @@ describe(reprocessReceipt, () => {
     expect(mockSend).toHaveBeenCalledExactlyOnceWith([
       expect.objectContaining({
         data: {
-          models: { ocr: "glm-ocr", parse: "google/gemma-4-e4b" },
+          model: DEEPSEEK,
           previousStatus: "done",
           receiptId,
           userId: "user-1",
@@ -502,7 +471,6 @@ describe(listExtractionModels, () => {
   beforeEach(() => {
     mockGetSession.mockClear();
     mockGetSession.mockResolvedValue({ user: { id: "user-1" } });
-    mockListAvailableModels.mockClear();
   });
 
   it("returns nothing to an unauthenticated caller", async () => {
@@ -512,42 +480,31 @@ describe(listExtractionModels, () => {
 
     await expect(listExtractionModels()).resolves.toStrictEqual({
       available: [],
-      defaults: { ocr: "", parse: "" },
+      selected: "",
     });
-    expect(mockListAvailableModels).not.toHaveBeenCalled();
   });
 
-  it("does not reach the provider without a session", async () => {
-    mockGetSession.mockResolvedValueOnce(null);
-
-    await listExtractionModels();
-
-    expect(mockListAvailableModels).not.toHaveBeenCalled();
-  });
-
-  it("returns the ids the provider reports, alongside the defaults", async () => {
-    mockListAvailableModels.mockResolvedValueOnce(["glm-ocr"]);
-
+  it("offers the configured model, selected", async () => {
     await expect(listExtractionModels()).resolves.toStrictEqual({
-      available: ["glm-ocr"],
-      defaults: { ocr: "glm-ocr", parse: "google/gemma-4-e4b" },
+      available: [DEEPSEEK],
+      selected: DEEPSEEK,
     });
   });
 
-  it("offers nothing rather than models the trigger would refuse", async () => {
-    mockListAvailableModels.mockResolvedValueOnce([]);
+  it("offers no model the trigger would refuse", async () => {
+    // The picker and the trigger read the same list, so a choice the dialog
+    // shows cannot be rejected as "not available" on submit.
+    const { available } = await listExtractionModels();
 
-    await expect(listExtractionModels()).resolves.toStrictEqual({
-      available: [],
-      defaults: { ocr: "glm-ocr", parse: "google/gemma-4-e4b" },
-    });
-  });
+    const results = await Promise.all(
+      available.map((model) => reprocessReceipt({ model, receiptId }))
+    );
 
-  it("does not offer a model the provider has not loaded", async () => {
-    mockListAvailableModels.mockResolvedValueOnce(["glm-ocr"]);
-
-    const result = await listExtractionModels();
-
-    expect(result.available).toStrictEqual(["glm-ocr"]);
+    for (const result of results) {
+      expect(result).not.toStrictEqual({
+        error: "That model is not available",
+        success: false,
+      });
+    }
   });
 });

@@ -4,7 +4,7 @@ import { z } from "zod";
 export const receiptStateSchema = z.object({
   error: z.string().optional(),
   receiptId: z.string(),
-  state: z.enum(["extracting", "parsing", "storing", "done", "failed"]),
+  state: z.enum(["extracting", "storing", "done", "failed"]),
 });
 
 export type ReceiptStateData = z.infer<typeof receiptStateSchema>;

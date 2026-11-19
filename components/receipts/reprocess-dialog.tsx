@@ -26,16 +26,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
-import type { ExtractionModels } from "@/lib/ai/models";
 
 interface ModelChoices {
   available: string[];
-  defaults: ExtractionModels;
+  selected: string;
 }
-
-/** The configured model when the provider has it loaded, else anything it does. */
-const pickAvailable = (preferred: string, available: string[]) =>
-  available.includes(preferred) ? preferred : (available[0] ?? preferred);
 
 const ModelSelect = ({
   label,
@@ -76,14 +71,14 @@ const ModelSelect = ({
 );
 
 /**
- * Runs extraction again over a receipt, optionally with models other than the
- * ones the environment fixed — the point of the feature is retrying a receipt
- * that extracted badly with something stronger.
+ * Runs extraction again over a receipt, optionally with a different model from
+ * the app's catalogue — the point of the feature is retrying a receipt that
+ * extracted badly with something stronger.
  *
- * The model list is fetched when the dialog opens rather than with the page,
- * because LM Studio is reachable from the app and not from the browser, and
- * because paying for the list on every receipts page render to populate a
- * dialog nobody opens is the wrong trade.
+ * The list is the app's own catalogue (ADR-0022), so it is resolved on the
+ * server and fetched when the dialog opens: the ids are configuration, and
+ * paying for them on every receipts page render to populate a dialog nobody
+ * opens is the wrong trade.
  */
 export const ReprocessDialog = ({
   merchantName,
@@ -98,7 +93,7 @@ export const ReprocessDialog = ({
 }) => {
   const router = useRouter();
   const [models, setModels] = useState<ModelChoices | null>(null);
-  const [selection, setSelection] = useState<ExtractionModels | null>(null);
+  const [selection, setSelection] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -115,13 +110,7 @@ export const ReprocessDialog = ({
       // result then would leak one receipt's models into the next dialog.
       if (current) {
         setModels(reported);
-        setSelection({
-          // Prefer the configured default, but only when the provider actually
-          // has it loaded — selecting a value the list does not contain renders
-          // an empty trigger and fails validation on submit.
-          ocr: pickAvailable(reported.defaults.ocr, reported.available),
-          parse: pickAvailable(reported.defaults.parse, reported.available),
-        });
+        setSelection(reported.selected || reported.available[0] || "");
       }
     };
 
@@ -140,10 +129,7 @@ export const ReprocessDialog = ({
     setSubmitting(true);
 
     try {
-      const result = await reprocessReceipt({
-        models: selection,
-        receiptId,
-      });
+      const result = await reprocessReceipt({ model: selection, receiptId });
 
       if (result.success) {
         onOpenChange(false);
@@ -176,27 +162,19 @@ export const ReprocessDialog = ({
     if (models.available.length === 0) {
       return (
         <p className="text-muted-foreground text-sm">
-          The model server is not reachable, so re-processing cannot run right
+          No extraction model is configured, so re-processing cannot run right
           now.
         </p>
       );
     }
 
     return (
-      <div className="flex flex-col gap-4">
-        <ModelSelect
-          label="Read the image with"
-          onValueChange={(ocr) => setSelection({ ...selection, ocr })}
-          options={models.available}
-          value={selection.ocr}
-        />
-        <ModelSelect
-          label="Read the receipt with"
-          onValueChange={(parse) => setSelection({ ...selection, parse })}
-          options={models.available}
-          value={selection.parse}
-        />
-      </div>
+      <ModelSelect
+        label="Extract with"
+        onValueChange={setSelection}
+        options={models.available}
+        value={selection}
+      />
     );
   })();
 

@@ -27,9 +27,6 @@ export const resolveProgressLabel = (state?: ReceiptState): string => {
     case "extracting": {
       return "Gnomes are extracting data…";
     }
-    case "parsing": {
-      return "A magic cat is taking a look at your receipt…";
-    }
     default: {
       return "Waiting for the server…";
     }

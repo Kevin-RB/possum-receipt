@@ -8,7 +8,6 @@ import {
 describe(stateTier, () => {
   it("treats a live stage as active and a finished one as terminal", () => {
     expect(stateTier("extracting")).toBe("active");
-    expect(stateTier("parsing")).toBe("active");
     expect(stateTier("storing")).toBe("active");
     expect(stateTier("done")).toBe("terminal");
     expect(stateTier("failed")).toBe("terminal");
@@ -40,7 +39,6 @@ describe(refreshForTransition, () => {
 
   it("does not refresh progress for a row already on the page", () => {
     expect(refreshForTransition(undefined, "extracting", true)).toBe("none");
-    expect(refreshForTransition("active", "parsing", true)).toBe("none");
     expect(refreshForTransition("active", "storing", true)).toBe("none");
   });
 });

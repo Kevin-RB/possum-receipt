@@ -33,7 +33,6 @@ const liveBadge: Record<ReceiptState, StatusBadge> = {
   done: { label: "done", variant: "default" },
   extracting: { label: "extracting", variant: "secondary" },
   failed: { label: "error", variant: "destructive" },
-  parsing: { label: "parsing", variant: "secondary" },
   storing: { label: "storing", variant: "secondary" },
 };
 
