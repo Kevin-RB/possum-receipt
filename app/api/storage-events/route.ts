@@ -43,24 +43,36 @@ export const POST = async (request: Request) => {
     );
   }
 
-  const { key } = parsed.data.Records[0].s3.object;
+  const { data: event } = parsed;
 
-  if (!key) {
+  if (!event) {
+    console.warn(
+      "storage-events: not an upload — ignored | body: %s",
+      JSON.stringify(body).slice(0, BODY_PREVIEW_LENGTH)
+    );
+    return NextResponse.json({ received: true });
+  }
+
+  const { objectKey } = event;
+
+  if (!objectKey) {
     console.warn("storage-events: event has an empty object key — ignored");
     return NextResponse.json({ received: true });
   }
 
-  const receipt = await findReceiptByObjectKey(key);
+  const receipt = await findReceiptByObjectKey(objectKey);
 
   if (!receipt) {
-    console.warn("storage-events: no receipt for key %s — ignored", key);
+    console.warn("storage-events: no receipt for key %s — ignored", objectKey);
     return NextResponse.json({ received: true });
   }
 
-  // Redelivery is expected: RustFS retries until it gets a 2xx, and a previous
-  // attempt may have promoted the row but failed to enqueue. `uploading` (first
-  // delivery) and `pending` (retry before the workflow starts) are actionable;
-  // anything further along (processing/done/error) is ignored.
+  // Redelivery is expected: the provider redelivers until it gets a 2xx — RustFS
+  // from its webhook queue, R2 from its Queue through the Worker — and a
+  // previous attempt may have promoted the row but failed to enqueue.
+  // `uploading` (first delivery) and `pending` (retry before the workflow
+  // starts) are actionable; anything further along (processing/done/error) is
+  // ignored.
   const promoted = receipt.status === "uploading";
 
   if (promoted) {
@@ -86,8 +98,9 @@ export const POST = async (request: Request) => {
       name: "receipt/uploaded",
     });
   } catch (error) {
-    // Non-2xx makes RustFS redeliver; the retry takes the `pending` path above
-    // and re-sends rather than silently losing the extraction.
+    // A non-2xx makes the provider's queue redeliver; the retry takes the
+    // `pending` path above and re-sends rather than silently losing the
+    // extraction.
     console.error(
       "storage-events: inngest.send failed for receipt %s — will retry",
       receipt.id,

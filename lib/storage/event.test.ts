@@ -62,52 +62,202 @@ const rustFsBody = {
   ],
 };
 
-describe("RustFS event schema", () => {
-  it("decodes the percent-encoded object key from a captured RustFS body", () => {
-    const result = storageEventSchema.safeParse(rustFsBody);
-    expect(result.success).toBeTruthy();
-    expect(result.data?.Records[0].s3.object.key).toBe(decodedKey);
-  });
+const rustfsNotification = (key: string, eventName: string) => ({
+  Records: [
+    {
+      eventName,
+      eventSource: "rustfs:s3",
+      s3: { object: { key } },
+    },
+  ],
+});
 
-  it("leaves an unencoded key unchanged and ignores MinIO-only fields", () => {
-    const result = storageEventSchema.safeParse({
-      Records: [
-        {
-          eventName: "s3:ObjectCreated:Put",
-          s3: { object: { key: "abc.jpg" } },
-        },
-      ],
+// Follows Cloudflare's documented R2 Queue message rather than a captured one:
+// https://developers.cloudflare.com/r2/buckets/event-notifications/
+const r2Body = (
+  action: string,
+  key: string,
+  object: Record<string, unknown> = {}
+) => ({
+  account: "3f4b7e3dcab231cbfdaa90a6a28bd548",
+  action,
+  bucket: "my-bucket",
+  eventTime: "2024-05-24T19:36:44.379Z",
+  object: {
+    eTag: "c846ff7a18f28c2e262116d6e8719ef0",
+    key,
+    size: 65_536,
+    ...object,
+  },
+});
+
+describe("storage event schema", () => {
+  describe("a RustFS bucket notification", () => {
+    it("turns the captured upload notification into a storage event", () => {
+      const result = storageEventSchema.safeParse(rustFsBody);
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toStrictEqual({ objectKey: decodedKey });
     });
-    expect(result.success).toBeTruthy();
-    expect(result.data?.Records[0].s3.object.key).toBe("abc.jpg");
+
+    it("leaves an unencoded object key unchanged and ignores MinIO-only fields", () => {
+      // The RustFS envelope really is just S3's event shape: only the object
+      // key of the first record is read, so no other field has to be present.
+      const result = storageEventSchema.safeParse(
+        rustfsNotification("abc.jpg", "s3:ObjectCreated:Put")
+      );
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toStrictEqual({ objectKey: "abc.jpg" });
+    });
+
+    it("ignores a removal notification as not an upload", () => {
+      const result = storageEventSchema.safeParse(
+        rustfsNotification(encodedKey, "s3:ObjectRemoved:Delete")
+      );
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toBeNull();
+    });
+
+    it("returns failure for empty body", () => {
+      expect(storageEventSchema.safeParse({}).success).toBeFalsy();
+    });
+
+    it("returns failure when Records is missing", () => {
+      expect(
+        storageEventSchema.safeParse({ EventName: "s3:ObjectCreated:Put" })
+          .success
+      ).toBeFalsy();
+    });
+
+    it("returns failure when Records is empty", () => {
+      expect(storageEventSchema.safeParse({ Records: [] }).success).toBeFalsy();
+    });
+
+    it("returns failure when the object key is missing", () => {
+      expect(
+        storageEventSchema.safeParse({ Records: [{ s3: {} }] }).success
+      ).toBeFalsy();
+    });
   });
 
-  it("returns failure for empty body", () => {
-    expect(storageEventSchema.safeParse({}).success).toBeFalsy();
+  describe("an R2 message", () => {
+    it("turns a PutObject message into a storage event", () => {
+      const result = storageEventSchema.safeParse(
+        r2Body("PutObject", "users/user-1/receipt.png")
+      );
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toStrictEqual({
+        objectKey: "users/user-1/receipt.png",
+      });
+    });
+
+    it("turns a CompleteMultipartUpload message into a storage event", () => {
+      const result = storageEventSchema.safeParse(
+        r2Body("CompleteMultipartUpload", "users/user-1/receipt.png")
+      );
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toStrictEqual({
+        objectKey: "users/user-1/receipt.png",
+      });
+    });
+
+    it("does not decode the object key, which R2 sends as is", () => {
+      const result = storageEventSchema.safeParse(
+        r2Body("PutObject", "users/user-1/a%20b.png")
+      );
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toStrictEqual({
+        objectKey: "users/user-1/a%20b.png",
+      });
+    });
+
+    it("ignores a DeleteObject message as not an upload", () => {
+      // Delete messages carry no size or eTag.
+      const result = storageEventSchema.safeParse(
+        r2Body("DeleteObject", "users/user-1/receipt.png", {
+          eTag: undefined,
+          size: undefined,
+        })
+      );
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toBeNull();
+    });
+
+    it("ignores a LifecycleDeletion message as not an upload", () => {
+      const result = storageEventSchema.safeParse(
+        r2Body("LifecycleDeletion", "users/user-1/receipt.png", {
+          eTag: undefined,
+          size: undefined,
+        })
+      );
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toBeNull();
+    });
+
+    it("ignores a CopyObject message as not an upload", () => {
+      // R2's documented CopyObject example: the copy creates an object, but the
+      // app never copies one, so it is not an upload it can act on.
+      const result = storageEventSchema.safeParse({
+        account: "3f4b7e3dcab231cbfdaa90a6a28bd548",
+        action: "CopyObject",
+        bucket: "my-bucket",
+        copySource: { bucket: "my-bucket", object: "my-original-object" },
+        eventTime: "2024-05-24T19:36:44.379Z",
+        object: {
+          eTag: "c846ff7a18f28c2e262116d6e8719ef0",
+          key: "my-new-object",
+          size: 65_536,
+        },
+      });
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toBeNull();
+    });
+
+    it("returns failure when the action is missing", () => {
+      expect(
+        storageEventSchema.safeParse({ object: { key: "x" } }).success
+      ).toBeFalsy();
+    });
   });
 
-  it("returns failure when Records is missing", () => {
-    expect(
-      storageEventSchema.safeParse({ EventName: "s3:ObjectCreated:Put" })
-        .success
-    ).toBeFalsy();
-  });
+  describe("shape selection", () => {
+    it("decodes the object key of a RustFS notification but not of an R2 message", () => {
+      // The two shapes cannot be confused, so the adapter is chosen by shape
+      // rather than by an environment setting.
+      const encoded = "users%2Fuser-1%2Freceipt.png";
 
-  it("returns failure when Records is empty", () => {
-    expect(storageEventSchema.safeParse({ Records: [] }).success).toBeFalsy();
-  });
+      expect(
+        storageEventSchema.safeParse(
+          rustfsNotification(encoded, "s3:ObjectCreated:Put")
+        ).data
+      ).toStrictEqual({ objectKey: "users/user-1/receipt.png" });
+      expect(
+        storageEventSchema.safeParse(r2Body("PutObject", encoded)).data
+      ).toStrictEqual({ objectKey: encoded });
+    });
 
-  it("returns failure when the object key is missing", () => {
-    expect(
-      storageEventSchema.safeParse({ Records: [{ s3: {} }] }).success
-    ).toBeFalsy();
-  });
+    it("returns failure for a bucket notification in a shape it does not know", () => {
+      expect(
+        storageEventSchema.safeParse({
+          events: [{ object: { key: "x" } }],
+        }).success
+      ).toBeFalsy();
+    });
 
-  it("returns failure for null body", () => {
-    expect(storageEventSchema.safeParse(null).success).toBeFalsy();
-  });
+    it("returns failure for null body", () => {
+      expect(storageEventSchema.safeParse(null).success).toBeFalsy();
+    });
 
-  it("returns failure for string body", () => {
-    expect(storageEventSchema.safeParse("not an object").success).toBeFalsy();
+    it("returns failure for string body", () => {
+      expect(storageEventSchema.safeParse("not an object").success).toBeFalsy();
+    });
   });
 });
