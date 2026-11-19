@@ -11,7 +11,7 @@ import {
   measureRuns,
   poolMetrics,
   rescoreRun,
-} from "./rescore-report";
+} from "./rescore-metrics";
 import { matchAmounts, matchItemPairs } from "./scoring";
 import type { Extraction, GoldenReceipt, RunRecord } from "./types";
 

@@ -14,13 +14,12 @@ import {
   variantTableRows,
 } from "./reporting";
 import {
-  buildDeltaMarkdown,
-  buildRescoreMarkdown,
   buildRescoreReport,
   buildRescoreSummary,
   meanOf,
   summaryJsonSchema,
-} from "./rescore-report";
+} from "./rescore-metrics";
+import { buildDeltaMarkdown, buildRescoreMarkdown } from "./rescore-report";
 import type {
   CategorizationGoldenItem,
   CorpusEntry,
