@@ -14,7 +14,7 @@ This touches the boundary set by ADR-0003 (no provenance, no re-extraction). Tha
 
 ## Decision
 
-Store the OCR transcript on the receipt row as a nullable `transcript` column. It is written immediately after the OCR step and before parsing, so a receipt that later fails to parse still keeps the text OCR produced. (Narrowed by ADR-0022, landing with #250: one multimodal call reads the image and writes the transcript with the fields, so there is no parsing pass to write before and the transcript is written in `storing`; the transcript and its disclosure are unchanged.) The transcript is shown in a collapsed disclosure on the receipt detail page.
+Store the OCR transcript on the receipt row as a nullable `transcript` column. It is written immediately after the OCR step and before parsing, so a receipt that later fails to parse still keeps the text OCR produced. (Narrowed by ADR-0022, landing with #250: one multimodal call reads the image and writes the transcript with the fields, so there is no parsing pass to write before and the transcript is written in `storing`, for a call that succeeds — a receipt whose extraction fails keeps no text; the transcript and its disclosure are unchanged.) The transcript is shown in a collapsed disclosure on the receipt detail page.
 
 The transcript is an observability artifact for pass 1 only:
 
@@ -27,7 +27,7 @@ The offline evaluation harness (issue #131) used the same transcript to classify
 ## Consequences
 
 - The receipt row carries the receipt's full text, including anything personal it prints (addresses, ABNs, partial card numbers). It lives in the same database as the rest of the extraction and is subject to the same access rules.
-- A failed parse leaves a transcript behind, which is the point: it makes parse failures diagnosable.
+- A failed parse leaves a transcript behind, which is the point: it makes parse failures diagnosable. (Narrowed by ADR-0022, landing with #250: with one call the transcript covers successful runs only — there is no parse pass to fail on its own — and a failed extraction is diagnosed from its error rather than from the image text.)
 - No provenance is added, and unit price is still never derived or persisted.
 
 ## Related
@@ -40,4 +40,4 @@ The offline evaluation harness (issue #131) used the same transcript to classify
 
 The evaluation harness this decision was written alongside has since been removed: the model question it existed to answer is settled (`glm-ocr` plus `gemma-4-e4b`), and every alternative was unusable. The OCR-vs-parse classification described above went with it.
 
-The transcript itself is retained on its own merits, which is why this ADR stands. It is what lets a failed parse be diagnosed from the app without a harness at all, and the disclosure on the receipt detail page is its reader.
+The transcript itself is retained on its own merits, which is why this ADR stands. It is what lets a failed parse be diagnosed from the app without a harness at all, and the disclosure on the receipt detail page is its reader. (Narrowed by ADR-0022, landing with #250: the transcript now covers successful runs only, since there is no parse pass to fail on its own, so a failed extraction is diagnosed from its error; the disclosure remains its reader.)
