@@ -11,8 +11,22 @@ const mockFindReceiptByIdForOwner = vi
   >()
   .mockResolvedValue({ id, objectKey: `${id}.jpg` });
 
-const mockDownloadObject =
-  vi.fn<() => Promise<{ transformToByteArray: () => Promise<Uint8Array> }>>();
+const streamOf = (bytes: number[]) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(bytes));
+      controller.close();
+    },
+  });
+
+const mockTransformToByteArray = vi.fn<() => Promise<Uint8Array>>();
+
+const mockDownloadObject = vi.fn<
+  () => Promise<{
+    transformToByteArray: typeof mockTransformToByteArray;
+    transformToWebStream: () => ReadableStream;
+  }>
+>();
 
 // @ts-expect-error mock types don't need to match Drizzle internals
 vi.mock(import("@/lib/db"), () => ({
@@ -49,8 +63,10 @@ describe("GET /api/receipts/:id/image", () => {
       id,
       objectKey: `${id}.jpg`,
     });
+    mockTransformToByteArray.mockResolvedValue(new Uint8Array([1, 2, 3]));
     mockDownloadObject.mockResolvedValue({
-      transformToByteArray: () => Promise.resolve(new Uint8Array([1, 2, 3])),
+      transformToByteArray: mockTransformToByteArray,
+      transformToWebStream: () => streamOf([1, 2, 3]),
     });
   });
 
@@ -88,5 +104,17 @@ describe("GET /api/receipts/:id/image", () => {
     expect(res.headers.get("Content-Type")).toBe("image/jpeg");
     // The bytes are user-uploaded, so the type must not be guessed.
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  it("hands the object on as a stream instead of buffering it", async () => {
+    // Vercel's 4.5 MB response limit applies only to a buffered body, and a
+    // phone photo can be larger. Reading the whole object into memory first is
+    // the thing this route must not do.
+    const res = await GET(new Request("http://localhost/api/receipts"), {
+      params,
+    });
+
+    await expect(res.arrayBuffer()).resolves.toBeInstanceOf(ArrayBuffer);
+    expect(mockTransformToByteArray).not.toHaveBeenCalled();
   });
 });

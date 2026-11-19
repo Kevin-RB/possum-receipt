@@ -51,6 +51,12 @@ There is deliberately **no chat-only candidate**. An earlier version took the br
 
 `proxy.ts` is no longer a single-job module. Alongside the optimistic session gate it mints one nonce per request and sets the report-only Content-Security-Policy on both the forwarded request and the response (ADR-0019). The decision recorded here is unchanged — nothing about "today" is read or written in the middleware, and it still does not import `lib/time.ts`.
 
+## Update (2026-11-19): the edge is Vercel, and its header is `x-vercel-ip-timezone`
+
+Production moved to Vercel, with `receipts.tribi.dev` as a **DNS-only** record (ADR-0023). The Cloudflare proxy that added `cf-timezone` is gone, and so is the Managed Transform the "page half depends on a Cloudflare Managed Transform" consequence above describes. `lib/viewer.ts` reads Vercel's **`x-vercel-ip-timezone`** instead — the same IANA format, the same position in the chain, the same validation downstream — so the decision here is unchanged and only its first source's name moved.
+
+The prerequisite did not disappear, it changed shape: what the header describes now depends on the record staying DNS-only, because behind a proxy it describes the proxy's edge rather than the reader. The once-per-process `[viewer-timezone]` warning stays and names that cause. The account fallback, `DEFAULT_TIMEZONE`, the absence of a chat-only candidate and the "resolved once per page" rule are all unchanged, and `DEV_TIMEZONE` still stands in locally, where there is no Vercel either.
+
 ## Related
 
 - ADR-0015 (receipts store the printed wall clock) — a receipt's day is stored data and does not depend on the viewer.

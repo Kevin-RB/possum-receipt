@@ -120,9 +120,9 @@ export const Chat = ({
     // the unanswered tool call is the signal that the agent is waiting.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     throttle: THROTTLE_MS,
-    // The browser's zone is already on the request as `cf-timezone`, put there
-    // by the edge, so it is not sent again. The model is: it is the one thing
-    // about this request the reader chose, and it rides on every send —
+    // The browser's zone is already on the request as `x-vercel-ip-timezone`,
+    // put there by Vercel, so it is not sent again. The model is: it is the one
+    // thing about this request the reader chose, and it rides on every send —
     // including the automatic resend after `ask_user` — because `useChat`
     // reads the latest transport at send time.
     transport: new DefaultChatTransport({
