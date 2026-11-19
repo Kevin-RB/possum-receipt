@@ -6,8 +6,8 @@ import { USER_ERROR } from "@/lib/errors";
 import { DEFAULT_TIMEZONE } from "@/lib/time";
 
 /**
- * The chat route's own link in the chain: the `cf-timezone` header, then the
- * account's stored zone, then the constant. `lib/time.ts` and `lib/viewer.ts`
+ * The chat route's own link in the chain: the `x-vercel-ip-timezone` header,
+ * then the account's stored zone, then the constant. `lib/time.ts` and `lib/viewer.ts`
  * test the resolver in isolation; this pins the order the route passes them in,
  * which is the part a future edit could silently swap.
  *
@@ -37,7 +37,7 @@ vi.mock(import("next/headers"), () => ({
   headers: () =>
     Promise.resolve({
       get: (name: string) =>
-        name === "cf-timezone" ? (state.header ?? null) : null,
+        name === "x-vercel-ip-timezone" ? (state.header ?? null) : null,
     }),
 }));
 

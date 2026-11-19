@@ -46,15 +46,16 @@ export const GET = async (
     );
   }
 
-  const bytes = await body.transformToByteArray();
-  const imageBlob = new Blob([Buffer.from(bytes)], {
-    type: contentTypeFromKey(receipt.objectKey),
-  });
+  const contentType = contentTypeFromKey(receipt.objectKey);
 
-  return new Response(imageBlob, {
+  // Streamed, not buffered: a phone photo can exceed Vercel's 4.5 MB response
+  // limit, and that limit applies only to a buffered body — a streamed one is
+  // forwarded as it arrives. Buffering also assembled the whole object in
+  // memory before handing it back, which this avoids.
+  return new Response(body.transformToWebStream(), {
     headers: {
       "Cache-Control": "private, max-age=300",
-      "Content-Type": contentTypeFromKey(receipt.objectKey),
+      "Content-Type": contentType,
       // The bytes are user-uploaded; without this a browser may sniff its way
       // to a type the stored content type does not name.
       "X-Content-Type-Options": "nosniff",

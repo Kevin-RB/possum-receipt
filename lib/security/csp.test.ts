@@ -7,19 +7,22 @@ const nonce = "abc123";
 const directives = (policy: string) => policy.split("; ");
 
 describe(buildContentSecurityPolicy, () => {
-  it("names the storage origin in production and keeps eval out", () => {
+  it("names the R2 origin in production and keeps eval out", () => {
+    // The production value is R2's S3 endpoint, not a custom domain: a
+    // presigned URL is signed for the host it names, so the policy has to carry
+    // that host exactly. The origin is the whole of it — no key, no bucket.
     const policy = buildContentSecurityPolicy({
       isDevelopment: false,
       nonce,
-      storageEndpoint: "https://uploads.tribi.dev",
+      storageEndpoint: "https://abc123.r2.cloudflarestorage.com",
     });
 
     expect(policy).toBe(
       "default-src 'self'; " +
         "script-src 'self' 'nonce-abc123' 'strict-dynamic'; " +
         "style-src 'self' 'unsafe-inline'; " +
-        "img-src 'self' data: blob: https://uploads.tribi.dev; " +
-        "connect-src 'self' https://uploads.tribi.dev wss://api.inngest.com; " +
+        "img-src 'self' data: blob: https://abc123.r2.cloudflarestorage.com; " +
+        "connect-src 'self' https://abc123.r2.cloudflarestorage.com wss://api.inngest.com; " +
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     );
     expect(policy).not.toContain("unsafe-eval");
