@@ -1,6 +1,6 @@
 # possum
 
-A local-first web app that turns photos of paper receipts into structured, persisted data. The user uploads an image, a durable workflow extracts the text and parses it into a fixed contract, and the result is stored alongside the receipt image.
+A local-first web app that turns photos of paper receipts into structured, persisted data. The user uploads an image, a durable workflow reads it into a fixed contract with the receipt's text kept alongside, and the result is stored alongside the receipt image.
 
 ## Language
 
@@ -18,7 +18,7 @@ A local-first web app that turns photos of paper receipts into structured, persi
 
 **Storage event**: The app's own form of a bucket notification: an object finished uploading, named by its object key. Each provider's bucket notification is turned into one by that provider's adapter, and the webhook acts on nothing else. A notification that is not an upload becomes no storage event and is ignored. _Avoid_: Upload event (it collides with `receipt/uploaded`, the Inngest event the webhook sends after finding the receipt), bucket event, provider event.
 
-**Extraction**: The two-pass workflow that turns a receipt image into structured data: first transcribing the text, then parsing the transcript into the receipt contract. _Avoid_: OCR, parsing, analysis.
+**Extraction**: The single call that turns a receipt image into the structured receipt contract, writing the receipt's transcript as the first field of its output. _Avoid_: OCR, parsing, analysis.
 
 **Processing status**: The lifecycle state of a receipt row: `uploading`, `pending`, `processing`, `done`, or `error`. _Avoid_: Status, job state, run state.
 
@@ -60,7 +60,7 @@ A local-first web app that turns photos of paper receipts into structured, persi
 
 **Re-processing**: A second run of extraction over a stored receipt, letting the owner retry a receipt that extracted badly, optionally with a different model. It replaces the stored extraction, so manual edits and user-set categories on that receipt do not survive it. Available from a completed or failed receipt. _Avoid_: Retry (that is re-signing a failed upload), re-extract, re-parse, redo.
 
-**Extraction models**: The pair of models a run uses — the OCR model that transcribes the image and the parse model that turns the transcript into the contract. Fixed by environment for a first extraction, chosen per run when re-processing. _Avoid_: AI model, LLM, the model.
+**Extraction model**: The one model a run uses — it reads the image and returns the contract, and categorization runs on the same id by default. Fixed by environment for a first extraction, chosen per run when re-processing from the app's catalogue. _Avoid_: AI model, LLM, the model, OCR model, parse model.
 
 **Provider**: A service the app calls to run a chat model, named in the catalogue by an id such as `openrouter` or `local`. The app owns the credential for every provider it offers; a reader never supplies one. _Avoid_: Vendor, backend, gateway.
 

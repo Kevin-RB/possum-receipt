@@ -25,11 +25,11 @@ The one thing replace must not do is fail silently. A re-process that fails must
 
 ## Decision
 
-**A re-process is a second run of the existing extraction pipeline over a stored receipt.** It re-runs OCR, parsing, and categorization, and its output **replaces** the stored extraction — all line items, and every field `receiptToFlat` writes. Manual edits and user-set categories on that receipt do not survive it. The confirm dialog says so.
+**A re-process is a second run of the existing extraction pipeline over a stored receipt.** It re-runs extraction and categorization, and its output **replaces** the stored extraction — all line items, and every field `receiptToFlat` writes. Manual edits and user-set categories on that receipt do not survive it. The confirm dialog says so.
 
 This is deliberately the same code path as a first extraction. `transcribe-receipt` gains a second trigger, `receipt/reprocess`, rather than a second function: the steps are identical and a near-copy is a near-copy that rots.
 
-**Models are chosen per run.** The `receipt/reprocess` event carries `models: { ocr, parse }`. Both already existed as optional parameters on `transcribeReceiptImage` and `parseReceiptText`, so this only widens the event schema and passes the values through. The chosen ids must appear in the list LM Studio reports from `GET /v1/models`, validated server-side at trigger time — a re-process cannot proceed anyway without LM Studio, so validating costs nothing and turns a provider 404 into a message naming the problem.
+**Models are chosen per run.** The `receipt/reprocess` event carries `models: { ocr, parse }`. Both already existed as optional parameters on `transcribeReceiptImage` and `parseReceiptText`, so this only widens the event schema and passes the values through. The chosen ids must appear in the list LM Studio reports from `GET /v1/models`, validated server-side at trigger time — a re-process cannot proceed anyway without LM Studio, so validating costs nothing and turns a provider 404 into a message naming the problem. (Narrowed by ADR-0022, landing with #250: the pair becomes one `model`, and the list is the app's own catalogue in `lib/ai/models.ts` rather than LM Studio's `/v1/models` — validation is local and the trigger still refuses an id the catalogue does not hold.)
 
 Categorization re-runs over the new items, exactly as it does after a first extraction, and keeps using the environment-configured `CATEGORIZE_MODEL`. It is a separate model slot with its own existing configuration, and a third picker in a row-action dialog is speculative.
 
