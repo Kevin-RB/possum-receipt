@@ -4,7 +4,7 @@ Date: 2026-11-19
 
 ## Status
 
-Accepted 2026-11-19. The code change is [#250](https://github.com/Kevin-RB/possum-receipt/issues/250); until it lands, the LM Studio two-pass pipeline described in ADR-0008 and ADR-0017 is what runs.
+Accepted 2026-11-19, landed 2026-11-20 in [#250](https://github.com/Kevin-RB/possum-receipt/issues/250). Until it landed, the LM Studio two-pass pipeline described in ADR-0008 and ADR-0017 was what ran; the 2026-11-20 update below records where the implementation differs from this text.
 
 ## Context
 
@@ -60,6 +60,15 @@ The research's true-ZDR challengers, Anthropic's Haiku 5.5 and Google's Gemma 4 
 - **ADR-0008 is narrowed, not superseded.** Its "write the transcript before parsing" rule no longer applies, because there is no pass to fail between reading and structuring. The transcript survives on its own merits: it is the detail page's disclosure, for the runs that succeed. Its cost is exact: the failed-parse diagnosis goes with the early write, because a call that fails has no separate reading pass to have left text behind.
 - **ADR-0011 is narrowed.** Its two-model pair becomes one model per re-process, validated against the app catalogue. Its replace semantics, its atomic claim, its failure restore and its transcript-in-`storing` rule all stand unchanged.
 - **ADR-0017 is narrowed.** Its "extraction and categorization stay on LM Studio" line is superseded: they now run on the same credential and the same routing flags as chat. Its `:batch` note's premise — offline work, of which the app has none today — becomes false with this decision, while its conclusion survives on the 30-day retention ground above. Both halves are stated here so the note is not re-litigated from the false half.
+
+## Update (2026-11-20)
+
+Landed in [#250](https://github.com/Kevin-RB/possum-receipt/issues/250) (#262). Two points from the Decision above are worth correcting rather than leaving a reader to reconcile them with the code.
+
+- **The re-process catalogue is `lib/ai/models.ts`, not `lib/chat/catalogue.ts`.** "Validated against the catalogue in `lib/chat/catalogue.ts`" was written when the chat catalogue was the only list the app owned. It cannot be the re-process list: it also holds the `local` entry, which is `google/gemma-4-e4b` and cannot read an image, so offering it would be a picker row that always fails. #250 therefore gave extraction its own catalogue — `EXTRACT_MODEL` first, then the curated ids — and the dialog and the trigger both read that one list. Nothing else about "one model per re-process" changed.
+- **The failed call's record is the response text, as this ADR left open at line 21.** A first extraction whose response does not satisfy the schema stores `NoObjectGeneratedError.text`, truncated to 20,000 characters, as the receipt's `transcript` before the run fails; a failed re-process writes nothing, so a row's transcript still describes the extraction stored on it (ADR-0011). ADR-0008 carries the details.
+
+No production behaviour depends on LM Studio afterwards, as intended: the chat's `local` entry remains a development target, and extraction has no local fallback — a run without `OPENROUTER_API_KEY` fails with the app's own message.
 
 ## Related
 

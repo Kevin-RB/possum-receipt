@@ -2,16 +2,15 @@ import { APICallError, NoObjectGeneratedError } from "ai";
 import { and, eq } from "drizzle-orm";
 import { NonRetriableError } from "inngest";
 
-import { isUnreachableError } from "@/lib/ai/errors";
-import { LM_STUDIO_URL } from "@/lib/ai/provider";
+import { extractReceipt } from "@/lib/ai/extract-receipt";
 import {
-  parseReceiptText,
-  transcribeReceiptImage,
-} from "@/lib/ai/transcribe-receipt-image";
+  isRetryableProviderFailure,
+  openRouterConfigured,
+} from "@/lib/ai/provider";
 import { db, findReceiptByIdForOwner, receiptItems, receipts } from "@/lib/db";
-import { ReceiptInformationExtractionSchema } from "@/lib/db/contract";
 import { receiptToFlat } from "@/lib/db/receipt-mapping";
 import type { ProcessingStatus } from "@/lib/db/schema/receipt";
+import { USER_ERROR } from "@/lib/errors";
 import { receiptsChannel } from "@/lib/inngest/channels";
 import { inngest } from "@/lib/inngest/client";
 import {
@@ -58,6 +57,9 @@ const formatFailureMessage = (error: Error): string => {
   return error.message;
 };
 
+const asError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
+
 /**
  * The status a failed run writes, or `null` when it must write nothing.
  *
@@ -92,6 +94,10 @@ export const statusAfterFailedRun = (
 export const transcribeReceipt = inngest.createFunction(
   {
     concurrency: [
+      // Two at a time per owner, two per account. Sized to what one person can
+      // usefully upload at once, now that a call is seconds rather than a GPU
+      // job: the cap exists to keep a burst from becoming a provider
+      // rate-limit cascade, not to share one machine's engine (ADR-0022).
       {
         key: "event.data.userId",
         limit: 2,
@@ -134,7 +140,7 @@ export const transcribeReceipt = inngest.createFunction(
     const { receiptId, userId } = event.data;
 
     const reprocessing = event.name === receiptReprocessEvent.name;
-    const models = reprocessing ? event.data.models : undefined;
+    const model = reprocessing ? event.data.model : undefined;
 
     // A re-process arrives already claimed: the server action moved the row to
     // `processing` before sending the event, and that claim is what stops two
@@ -144,6 +150,13 @@ export const transcribeReceipt = inngest.createFunction(
       : "pending";
 
     const ch = receiptsChannel(userId);
+
+    // Nothing can run without the credential, and a missing key is a
+    // deployment fault rather than a transient one — retrying cannot fix it, so
+    // the receipt is failed immediately with wording the owner can act on.
+    if (!openRouterConfigured()) {
+      throw new NonRetriableError(USER_ERROR.extractionUnavailable);
+    }
 
     const receipt = await step.run("lookup-receipt", async () => {
       // Scoped to the user on the event, not just the receipt id. The event is a
@@ -176,7 +189,10 @@ export const transcribeReceipt = inngest.createFunction(
       state: "extracting",
     });
 
-    const transcript = await step.run("extracting", async () => {
+    // One call now reads the image and writes the receipt, so there is no pass
+    // between reading and structuring that could fail on its own and nothing is
+    // written before the store (ADR-0022).
+    const attempt = await step.run("extracting", async () => {
       const body = await downloadObject({
         bucket: BUCKET,
         key,
@@ -187,77 +203,49 @@ export const transcribeReceipt = inngest.createFunction(
       const base64 = await body.transformToString("base64");
 
       try {
-        return await transcribeReceiptImage(
+        return await extractReceipt({
           base64,
-          contentTypeFromKey(key),
-          models?.ocr
-        );
+          mediaType: contentTypeFromKey(key),
+          model,
+        });
       } catch (error) {
-        if (isUnreachableError(error)) {
-          throw new NonRetriableError(
-            `LM Studio is not reachable at ${LM_STUDIO_URL}. Start LM Studio and try again.`
-          );
+        // Classified here, where the step's error is thrown, because this is the
+        // error Inngest decides on: a rate limit or a 5xx leaves as itself so
+        // the step is retried, and only a failure that cannot succeed on another
+        // attempt becomes permanent. The raw failure arrives wrapped in the
+        // SDK's `RetryError` — see `isRetryableProviderFailure`.
+        if (isRetryableProviderFailure(error)) {
+          throw error;
         }
-        throw error;
+
+        throw new NonRetriableError(formatFailureMessage(asError(error)));
       }
     });
 
-    // A first extraction writes the transcript as soon as it has it: there is
-    // nothing else on the row, so the OCR text is the only evidence of what the
-    // image said if parsing fails (ADR-0008).
-    //
-    // A re-process does not. The row already holds a transcript that describes
-    // the extraction still stored on it, and the whole promise of restoring the
-    // previous status is that the data survives a failed run — which an early
-    // write would break, leaving a receipt reading as `done` with the old
-    // extraction and a transcript that produced nothing. So it is written with
-    // the extraction, in the `storing` transaction below.
-    if (!reprocessing) {
-      await step.run("store-transcript", async () => {
-        await db
-          .update(receipts)
-          .set({ transcript })
-          .where(eq(receipts.id, receiptId));
-      });
-    }
+    if (!attempt.ok) {
+      const { rawText, reason } = attempt;
 
-    await step.realtime.publish("publish-parsing", ch.state, {
-      receiptId,
-      state: "parsing",
-    });
-
-    let rawExtraction;
-    try {
-      rawExtraction = await step.run("parsing", () =>
-        parseReceiptText(transcript, models?.parse)
-      );
-    } catch (error) {
-      if (isUnreachableError(error)) {
-        throw new NonRetriableError(
-          `LM Studio is not reachable at ${LM_STUDIO_URL}. Start LM Studio and try again.`
-        );
-      }
-      if (APICallError.isInstance(error) && error.isRetryable) {
-        // let it bubble up unwrapped -> Inngest retries the step automatically
-        throw error;
+      // A response that does not satisfy the schema still leaves what the model
+      // read, which is the only record of it now that reading and structuring
+      // are one call (ADR-0008). A first extraction has nothing else on the row
+      // to contradict; a re-process does — the row holds an extraction and the
+      // transcript that describes it — so a failed re-process writes neither
+      // (ADR-0011).
+      if (!reprocessing && rawText) {
+        await step.run("store-failed-transcript", async () => {
+          await db
+            .update(receipts)
+            .set({ transcript: rawText })
+            .where(eq(receipts.id, receiptId));
+        });
       }
 
       throw new NonRetriableError(
-        formatFailureMessage(
-          error instanceof Error ? error : new Error(String(error))
-        )
+        `Model did not return valid structured output: ${reason}`
       );
     }
 
-    const parsedExtraction =
-      ReceiptInformationExtractionSchema.safeParse(rawExtraction);
-    if (!parsedExtraction.success) {
-      throw new NonRetriableError(
-        `Contract validation failed: ${parsedExtraction.error.message}`
-      );
-    }
-
-    const { data: extraction } = parsedExtraction;
+    const { extraction, transcript } = attempt;
 
     const items = normalizeExtractedItems(extraction.items);
 

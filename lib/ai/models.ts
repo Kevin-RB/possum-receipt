@@ -1,56 +1,41 @@
 import { z } from "zod";
 
-import { LM_STUDIO_URL } from "./provider";
+/**
+ * The extraction models the app offers.
+ *
+ * A dated revision is deliberate: the undated `deepseek/deepseek-v4.1-flash`
+ * alias resolves to an older, unpinned snapshot, which is drift rather than a
+ * saving. This is the same id chat runs on (ADR-0017), so one credential, one
+ * model and one data-policy track cover every call the app makes.
+ */
+export const EXTRACTION_MODELS = ["deepseek/deepseek-v4.1-flash-1017"] as const;
 
-const modelsResponseSchema = z.object({
-  data: z.array(z.object({ id: z.string() })),
-});
+/** The model a first extraction runs on, unless the environment names another. */
+export const EXTRACT_MODEL = process.env.EXTRACT_MODEL ?? EXTRACTION_MODELS[0];
+
+/** Categorization runs on the extraction model unless it is given its own. */
+export const CATEGORIZE_MODEL = process.env.CATEGORIZE_MODEL ?? EXTRACT_MODEL;
 
 /**
- * The two models one extraction run uses.
+ * What the re-process picker offers, and what the trigger accepts: the
+ * configured default plus the catalogue, without duplicates.
  *
- * They are a pair because the roles differ: the OCR model reads the image, the
- * parse model turns the transcript into the contract, and only the first needs
- * to be a vision model. Naming the pair keeps that split visible at every
- * boundary the models cross — the picker, the trigger's input, and the event the
- * run is started with.
- *
- * Ids are bounded rather than free text: they are checked against what the
- * provider reports before a run starts.
+ * The configured model is first because it is the one a first extraction uses,
+ * so re-running a receipt as it was extracted is the default choice. It is
+ * included even when it is not in the catalogue, so a deployment that sets
+ * `EXTRACT_MODEL` can pick that model again rather than having its own default
+ * refused.
  */
-export const extractionModelsSchema = z.object({
-  ocr: z.string().min(1).max(200),
-  parse: z.string().min(1).max(200),
-});
-
-export type ExtractionModels = z.infer<typeof extractionModelsSchema>;
+export const extractionSelections = (): string[] => [
+  ...new Set([EXTRACT_MODEL, ...EXTRACTION_MODELS].filter(Boolean)),
+];
 
 /**
- * The models LM Studio currently has loaded.
+ * A re-process names one model. It travels with the event rather than being
+ * read from the environment at run time, so a receipt that extracted badly can
+ * be retried with a different one without a redeploy.
  *
- * Re-processing lets the owner pick a stronger model than the one the
- * environment fixed, and the only honest list of choices is the one the
- * provider reports — an id from any other source would fail at request time
- * with an opaque provider error.
- *
- * An unreachable or unparseable provider yields no models rather than an
- * error: the picker degrades to whatever the environment configured instead of
- * making the whole receipts table unusable because LM Studio is down.
+ * Ids are bounded rather than free text: the trigger checks one against
+ * `extractionSelections()` before a run is started.
  */
-export const listAvailableModels = async (): Promise<string[]> => {
-  try {
-    const response = await fetch(`${LM_STUDIO_URL}/models`);
-    if (!response.ok) {
-      return [];
-    }
-
-    const parsed = modelsResponseSchema.safeParse(await response.json());
-    if (!parsed.success) {
-      return [];
-    }
-
-    return [...new Set(parsed.data.data.map((model) => model.id))];
-  } catch {
-    return [];
-  }
-};
+export const extractionModelIdSchema = z.string().min(1).max(200);

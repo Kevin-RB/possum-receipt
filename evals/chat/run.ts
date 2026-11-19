@@ -3,10 +3,13 @@ import path from "node:path";
 
 import { eq } from "drizzle-orm";
 
-import { LM_STUDIO_URL } from "@/lib/ai/provider";
 import type { ChatAgent } from "@/lib/chat/agent";
 import { createChatAgent, MAX_STEPS } from "@/lib/chat/agent";
-import { resolveChatModel, resolveLocalChatModel } from "@/lib/chat/catalogue";
+import {
+  LM_STUDIO_URL,
+  resolveChatModel,
+  resolveLocalChatModel,
+} from "@/lib/chat/catalogue";
 import { db } from "@/lib/db";
 import { FIXTURE_EMAIL } from "@/lib/db/fixture";
 import { user } from "@/lib/db/schema/auth";
