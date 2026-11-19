@@ -36,13 +36,9 @@ This is a **single-context** repo: read `CONTEXT.md` at the root and `docs/adr/`
 
 ### MCP servers
 
-MCP servers live in the **global** config, `~/.config/opencode/opencode.jsonc`, not in this repo's `opencode.json`. Configs merge rather than replace, so a global entry still resolves inside a project. They are machine-level by nature: `chrome-devtools` and `paper` both point at a localhost port, and `coolify` at a private LAN address — none of which resolve for anyone who clones this repo, which is why they are not committed.
+MCP servers live in the **global** config, `~/.config/opencode/opencode.jsonc`, not in this repo's `opencode.json`. Configs merge rather than replace, so a global entry still resolves inside a project. They are machine-level by nature: `chrome-devtools` and `paper` both point at a localhost port — none of which resolve for anyone who clones this repo, which is why they are not committed.
 
-One consequence worth knowing: a config file cannot carry a secret, so `coolify` reads its credential from the environment.
-
-- `COOLIFY_API_KEY` — **required.** Export it in whichever shell launches OpenCode (`export COOLIFY_API_KEY=...`, or the equivalent in your shell profile). Without it the server still reports as connected, but every tool call fails on auth, because there is nothing to send in the `Authorization` header.
-
-Confirm the set with `opencode mcp list`.
+Confirm the set with `opencode mcp list`. (A `coolify` server pointing at the LAN address of the Coolify instance was removed on 2026-11-19; the GitHub repo-level `COOLIFY_API_KEY` secret used by `.github/workflows/sync-inngest.yml` is a separate, read-only token and is unaffected.)
 
 ---
 
