@@ -35,7 +35,7 @@ const goldenItemSchema = z.object({
   unitPrice: z.number().nullable(),
 });
 
-const goldenReceiptSchema = z.object({
+export const goldenReceiptSchema = z.object({
   gst: z.number().nullable(),
   hasIntegrityWarning: z.boolean(),
   id: z.string().min(1),

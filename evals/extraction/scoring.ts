@@ -81,16 +81,87 @@ interface Candidate {
   similarity: number;
 }
 
+/** One golden line and the predicted line it was paired with. */
+export interface ItemPair {
+  goldenIndex: number;
+  predictedIndex: number;
+}
+
+/**
+ * Greedy one-to-one selection: best similarity first, then golden order, then
+ * predicted order, so the same input always produces the same pairs.
+ */
+const selectPairs = (candidates: Candidate[]): ItemPair[] => {
+  candidates.sort(
+    (left, right) =>
+      right.similarity - left.similarity ||
+      left.goldenIndex - right.goldenIndex ||
+      left.predictedIndex - right.predictedIndex
+  );
+
+  const usedGolden = new Set<number>();
+  const usedPredicted = new Set<number>();
+  const pairs: ItemPair[] = [];
+  for (const candidate of candidates) {
+    if (
+      usedGolden.has(candidate.goldenIndex) ||
+      usedPredicted.has(candidate.predictedIndex)
+    ) {
+      continue;
+    }
+    usedGolden.add(candidate.goldenIndex);
+    usedPredicted.add(candidate.predictedIndex);
+    pairs.push({
+      goldenIndex: candidate.goldenIndex,
+      predictedIndex: candidate.predictedIndex,
+    });
+  }
+  return pairs;
+};
+
+/** Counts, ratios and the golden lines nobody claimed, from a pair set. */
+const summarisePairs = (
+  goldenCount: number,
+  predictedCount: number,
+  pairs: ItemPair[]
+): ItemMatch => {
+  const matched = pairs.length;
+  let precision = predictedCount === 0 ? 0 : matched / predictedCount;
+  if (predictedCount === 0 && goldenCount === 0) {
+    precision = 1;
+  }
+  const recall = goldenCount === 0 ? 1 : matched / goldenCount;
+  const f1 =
+    precision + recall === 0
+      ? 0
+      : (2 * precision * recall) / (precision + recall);
+
+  const matchedGolden = new Set(pairs.map((pair) => pair.goldenIndex));
+
+  return {
+    f1: round(f1, 4),
+    golden: goldenCount,
+    matched,
+    precision: round(precision, 4),
+    predicted: predictedCount,
+    recall: round(recall, 4),
+    unmatchedGolden: Array.from(
+      { length: goldenCount },
+      (_, index) => index
+    ).filter((index) => !matchedGolden.has(index)),
+  };
+};
+
 /**
  * Multiset matching, not index matching: the golden key's item order is the old
  * pipeline's insertion order, not the printed order. A pair may match only when
  * the line totals are within a cent and the names are at least 0.75 similar;
  * pairs are then taken greedily by similarity descending, one-to-one.
  */
-export const matchItems = (
+export const matchItemPairs = (
   goldenItems: GoldenItem[],
   predictedItems: PredictedItem[]
-): ItemMatch => {
+): ItemPair[] => {
   const candidates: Candidate[] = [];
 
   for (const [goldenIndex, golden] of goldenItems.entries()) {
@@ -106,51 +177,58 @@ export const matchItems = (
     }
   }
 
-  candidates.sort(
-    (left, right) =>
-      right.similarity - left.similarity ||
-      left.goldenIndex - right.goldenIndex ||
-      left.predictedIndex - right.predictedIndex
+  return selectPairs(candidates);
+};
+
+export const matchItems = (
+  goldenItems: GoldenItem[],
+  predictedItems: PredictedItem[]
+): ItemMatch =>
+  summarisePairs(
+    goldenItems.length,
+    predictedItems.length,
+    matchItemPairs(goldenItems, predictedItems)
   );
 
-  const usedGolden = new Set<number>();
-  const usedPredicted = new Set<number>();
-  for (const candidate of candidates) {
-    if (
-      usedGolden.has(candidate.goldenIndex) ||
-      usedPredicted.has(candidate.predictedIndex)
-    ) {
-      continue;
+/**
+ * The money-accuracy matching: a pair needs the same `kind` and line totals
+ * within a cent once the sign is ignored. Names are not consulted, so this
+ * separates "the amount is wrong or the line is missing" from "the name is
+ * formatted differently", which is what `matchItems` cannot do.
+ */
+export const matchAmountPairs = (
+  goldenItems: GoldenItem[],
+  predictedItems: PredictedItem[]
+): ItemPair[] => {
+  const candidates: Candidate[] = [];
+
+  for (const [goldenIndex, golden] of goldenItems.entries()) {
+    for (const [predictedIndex, predicted] of predictedItems.entries()) {
+      if (golden.kind !== predicted.kind) {
+        continue;
+      }
+      const distance = Math.abs(
+        Math.abs(golden.lineTotal) - Math.abs(predicted.lineTotal)
+      );
+      if (distance > AMOUNT_TOLERANCE) {
+        continue;
+      }
+      candidates.push({ goldenIndex, predictedIndex, similarity: 1 });
     }
-    usedGolden.add(candidate.goldenIndex);
-    usedPredicted.add(candidate.predictedIndex);
   }
 
-  const matched = usedGolden.size;
-  const predicted = predictedItems.length;
-  const golden = goldenItems.length;
-  let precision = predicted === 0 ? 0 : matched / predicted;
-  if (predicted === 0 && golden === 0) {
-    precision = 1;
-  }
-  const recall = golden === 0 ? 1 : matched / golden;
-  const f1 =
-    precision + recall === 0
-      ? 0
-      : (2 * precision * recall) / (precision + recall);
-
-  return {
-    f1: round(f1, 4),
-    golden,
-    matched,
-    precision: round(precision, 4),
-    predicted,
-    recall: round(recall, 4),
-    unmatchedGolden: goldenItems
-      .map((_, index) => index)
-      .filter((index) => !usedGolden.has(index)),
-  };
+  return selectPairs(candidates);
 };
+
+export const matchAmounts = (
+  goldenItems: GoldenItem[],
+  predictedItems: PredictedItem[]
+): ItemMatch =>
+  summarisePairs(
+    goldenItems.length,
+    predictedItems.length,
+    matchAmountPairs(goldenItems, predictedItems)
+  );
 
 /**
  * Parses a receipt wall clock, tolerating what models actually emit: a trailing

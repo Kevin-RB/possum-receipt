@@ -180,7 +180,7 @@ const formatHosts = (hosts: Record<string, number>): string => {
 
 const escapeTableCell = (value: string): string => value.replaceAll("|", "\\|");
 
-const markdownTable = (headers: string[], rows: string[][]): string => {
+export const markdownTable = (headers: string[], rows: string[][]): string => {
   const lines = [
     `| ${headers.map(escapeTableCell).join(" | ")} |`,
     `| ${headers.map(() => "---").join(" | ")} |`,
@@ -228,7 +228,24 @@ export interface SummaryInput {
   strictOutputs: boolean;
 }
 
-const variantRows = (runs: RunIndex): string[][] =>
+/**
+ * The variant table, shared with the offline re-score so a key swap cannot
+ * change the columns or the arithmetic that produced the first run's numbers.
+ */
+export const VARIANT_TABLE_HEADERS = [
+  "variant",
+  "schema valid",
+  "total exact",
+  "datetime exact",
+  "mean F1",
+  "reconcile",
+  "payment exact",
+  "mean cost",
+  "p50 latency",
+  "hosts",
+];
+
+export const variantTableRows = (runs: RunIndex): string[][] =>
   extractionVariants.map((variant) => {
     const summary = summariseVariant(
       variant,
@@ -414,19 +431,8 @@ export const buildSummaryMarkdown = (input: SummaryInput): string => {
   ].join("\n");
 
   const variantTable = markdownTable(
-    [
-      "variant",
-      "schema valid",
-      "total exact",
-      "datetime exact",
-      "mean F1",
-      "reconcile",
-      "payment exact",
-      "mean cost",
-      "p50 latency",
-      "hosts",
-    ],
-    variantRows(input.runs)
+    VARIANT_TABLE_HEADERS,
+    variantTableRows(input.runs)
   );
 
   const perReceipt = markdownTable(
