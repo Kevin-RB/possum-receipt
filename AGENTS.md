@@ -108,7 +108,7 @@ Local env defaults are in `.env.local` (which is gitignored). Key variables:
 
 ## Production deployment (Vercel Hobby)
 
-Production is a Vercel **Hobby** project deploying `main` from Git, with functions pinned to **`syd1`** (Sydney, ~12 ms from Brisbane); Postgres is **Neon** (Sydney) and images are in **Cloudflare R2**. The app stays on Next's own build — no vinext, no OpenNext, because those reimplement or re-target Next and the point of this move was to stop operating a host. ADR-0023 records the decision; ADR-0005 and ADR-0006 describe the Coolify/RustFS deployment it replaces (the compose file and Docker targets are removed by #254). The site is `receipts.tribi.dev`.
+Production is a Vercel **Hobby** project deploying `main` from Git, with functions pinned to **`syd1`** (Sydney, ~12 ms from Brisbane) by `vercel.json`'s `regions` — in the repo, not only in a dashboard, and Hobby allows exactly one; Postgres is **Neon** (Sydney) and images are in **Cloudflare R2**. The app stays on Next's own build — no vinext, no OpenNext, because those reimplement or re-target Next and the point of this move was to stop operating a host. ADR-0023 records the decision; ADR-0005 and ADR-0006 describe the Coolify/RustFS deployment it replaces (the compose file and Docker targets are removed by #254). The site is `receipts.tribi.dev`.
 
 - **`receipts.tribi.dev` is a DNS-only CNAME.** Grey cloud, no Cloudflare proxy. Vercel does not recommend a proxy in front of it — two caches, and geolocation that describes Cloudflare's edge rather than the reader — and two things in the app depend on the direct path:
   - **`x-vercel-ip-timezone`** carries the viewer's zone. Behind the proxy this header would describe Cloudflare, so "today" would be the edge's day.
