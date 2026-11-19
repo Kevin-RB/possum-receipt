@@ -2,9 +2,11 @@ import { APICallError, NoObjectGeneratedError } from "ai";
 import { and, eq } from "drizzle-orm";
 import { NonRetriableError } from "inngest";
 
-import type { ExtractionAttempt } from "@/lib/ai/extract-receipt";
 import { extractReceipt } from "@/lib/ai/extract-receipt";
-import { openRouterConfigured } from "@/lib/ai/provider";
+import {
+  isRetryableProviderFailure,
+  openRouterConfigured,
+} from "@/lib/ai/provider";
 import { db, findReceiptByIdForOwner, receiptItems, receipts } from "@/lib/db";
 import { receiptToFlat } from "@/lib/db/receipt-mapping";
 import type { ProcessingStatus } from "@/lib/db/schema/receipt";
@@ -190,32 +192,35 @@ export const transcribeReceipt = inngest.createFunction(
     // One call now reads the image and writes the receipt, so there is no pass
     // between reading and structuring that could fail on its own and nothing is
     // written before the store (ADR-0022).
-    let attempt: ExtractionAttempt;
-    try {
-      attempt = await step.run("extracting", async () => {
-        const body = await downloadObject({
-          bucket: BUCKET,
-          key,
-        });
-        if (!body) {
-          throw new NonRetriableError(`Empty body for object ${key}`);
-        }
-        const base64 = await body.transformToString("base64");
+    const attempt = await step.run("extracting", async () => {
+      const body = await downloadObject({
+        bucket: BUCKET,
+        key,
+      });
+      if (!body) {
+        throw new NonRetriableError(`Empty body for object ${key}`);
+      }
+      const base64 = await body.transformToString("base64");
 
+      try {
         return await extractReceipt({
           base64,
           mediaType: contentTypeFromKey(key),
           model,
         });
-      });
-    } catch (error) {
-      if (APICallError.isInstance(error) && error.isRetryable) {
-        // let it bubble up unwrapped -> Inngest retries the step automatically
-        throw error;
-      }
+      } catch (error) {
+        // Classified here, where the step's error is thrown, because this is the
+        // error Inngest decides on: a rate limit or a 5xx leaves as itself so
+        // the step is retried, and only a failure that cannot succeed on another
+        // attempt becomes permanent. The raw failure arrives wrapped in the
+        // SDK's `RetryError` — see `isRetryableProviderFailure`.
+        if (isRetryableProviderFailure(error)) {
+          throw error;
+        }
 
-      throw new NonRetriableError(formatFailureMessage(asError(error)));
-    }
+        throw new NonRetriableError(formatFailureMessage(asError(error)));
+      }
+    });
 
     if (!attempt.ok) {
       const { rawText, reason } = attempt;

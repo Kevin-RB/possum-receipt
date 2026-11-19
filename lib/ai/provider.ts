@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { wrapLanguageModel } from "ai";
+import { APICallError, RetryError, wrapLanguageModel } from "ai";
 import type { LanguageModel } from "ai";
 
 import { formatCallCost, readCallCost } from "./usage";
@@ -41,6 +41,25 @@ const openrouter = createOpenRouter({
  */
 export const openRouterConfigured = (): boolean =>
   Boolean(process.env.OPENROUTER_API_KEY);
+
+/**
+ * Whether a provider failure is worth another attempt.
+ *
+ * `generateText` runs its own retries (`maxRetries: 1` here) and reports the
+ * last failure wrapped in a `RetryError`, so the error a step sees is **not**
+ * the `APICallError` that knows whether it is retryable. Classifying the
+ * wrapper alone reports every rate limit and every 5xx as permanent, which is
+ * the opposite of what ADR-0022 relies on: "this is a background run whose
+ * failure is visible on the receipt and retryable in Inngest". So the wrapper
+ * is unwrapped to the failure underneath, which is the only thing that knows.
+ */
+export const isRetryableProviderFailure = (error?: unknown): boolean => {
+  if (RetryError.isInstance(error)) {
+    return isRetryableProviderFailure(error.lastError);
+  }
+
+  return APICallError.isInstance(error) && error.isRetryable;
+};
 
 const settings = {
   ...OPENROUTER_ROUTING,

@@ -1,4 +1,6 @@
 import { InngestTestEngine } from "@inngest/test";
+import { APICallError, RetryError } from "ai";
+import { NonRetriableError } from "inngest";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 
 import type { ExtractionAttempt } from "@/lib/ai/extract-receipt";
@@ -13,7 +15,6 @@ const {
   mockFindReceiptByIdForOwner,
   mockInsert,
   mockInsertValues,
-  mockProvider,
   mockSet,
   mockTransaction,
   mockUpdate,
@@ -58,7 +59,6 @@ const {
       vi.fn<(id: string, ownerId: string) => Promise<unknown>>(),
     mockInsert: insert,
     mockInsertValues: insertValues,
-    mockProvider: { configured: true },
     mockSet: setValue,
     mockTransaction: transaction,
     mockUpdate: updateTable,
@@ -80,10 +80,6 @@ vi.mock(import("@/lib/db"), () => ({
 
 vi.mock(import("@/lib/ai/extract-receipt"), () => ({
   extractReceipt: mockExtract,
-}));
-
-vi.mock(import("@/lib/ai/provider"), () => ({
-  openRouterConfigured: () => mockProvider.configured,
 }));
 
 // Lets the `extracting` step run for real, which is the only way to observe
@@ -220,7 +216,10 @@ describe("transcribeReceipt function", () => {
     mockFindReceiptByIdForOwner.mockClear();
     mockInsert.mockClear();
     mockInsertValues.mockClear();
-    mockProvider.configured = true;
+    // The real `openRouterConfigured` reads this per call, so the credential is
+    // the environment rather than a mocked module. `vitest` does not load
+    // `.env.local`, so an unset value here is the real "not configured" case.
+    process.env.OPENROUTER_API_KEY = "test-key";
     mockSet.mockClear();
     mockTransaction.mockClear();
     mockUpdate.mockClear();
@@ -487,7 +486,7 @@ describe("transcribeReceipt function", () => {
   });
 
   it("fails the receipt when no extraction credential is configured", async () => {
-    mockProvider.configured = false;
+    delete process.env.OPENROUTER_API_KEY;
 
     const { error } = await createEngine(undefined, [
       "mark-processing",
@@ -496,6 +495,47 @@ describe("transcribeReceipt function", () => {
     expect(error).toBeDefined();
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockExtract).not.toHaveBeenCalled();
+  });
+
+  it("lets a transient provider failure through, so Inngest retries it", async () => {
+    // The SDK wraps its last failure in a `RetryError`; classifying the wrapper
+    // as permanent would quietly delete the retry ADR-0022 depends on.
+    const retryable = new RetryError({
+      errors: [
+        new APICallError({
+          isRetryable: true,
+          message: "rate limited",
+          requestBodyValues: {},
+          statusCode: 429,
+          url: "https://openrouter.ai/api/v1/chat/completions",
+        }),
+      ],
+      message: "Failed after 2 attempts.",
+      reason: "maxRetriesExceeded",
+    });
+    mockExtract.mockRejectedValueOnce(retryable);
+
+    const { error } = await createEngine(undefined, ["extracting"]).execute();
+
+    expect(error).toBeDefined();
+    expect(error).not.toBeInstanceOf(NonRetriableError);
+    expect((error as Error).name).toBe("AI_RetryError");
+  });
+
+  it("fails a request the provider refused, rather than retrying it", async () => {
+    mockExtract.mockRejectedValueOnce(
+      new APICallError({
+        isRetryable: false,
+        message: "bad request",
+        requestBodyValues: {},
+        statusCode: 400,
+        url: "https://openrouter.ai/api/v1/chat/completions",
+      })
+    );
+
+    const { error } = await createEngine(undefined, ["extracting"]).execute();
+
+    expect((error as Error).name).toBe("NonRetriableError");
   });
 
   it("refuses a receipt that does not belong to the event's user", async () => {
