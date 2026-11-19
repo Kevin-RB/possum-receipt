@@ -80,8 +80,9 @@ const r2Adapter = z
  * shapes cannot be confused — RustFS sends a `Records[]` envelope, R2 sends a
  * top-level `action` and `object` — so shape is a reliable choice.
  *
- * `null` means a bucket notification that is not an upload, such as a delete or
- * a copy.
+ * `null` means a bucket notification that is not an upload: a delete from
+ * either provider, or a copy from R2. A RustFS copy is an `s3:ObjectCreated:*`
+ * event, so it counts, following the bucket rule (`--event put`).
  */
 export const storageEventSchema: z.ZodType<StorageEvent | null> = z.union([
   rustfsAdapter,

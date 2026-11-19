@@ -120,6 +120,17 @@ describe("storage event schema", () => {
       expect(result.data).toBeNull();
     });
 
+    it("treats a copy as an upload, as the bucket rule does", () => {
+      // RustFS registers `--event put`, which is `s3:ObjectCreated:*`, so a copy
+      // notification is an object-created event. R2's CopyObject is not (below).
+      const result = storageEventSchema.safeParse(
+        rustfsNotification(encodedKey, "s3:ObjectCreated:Copy")
+      );
+
+      expect(result.success).toBeTruthy();
+      expect(result.data).toStrictEqual({ objectKey: decodedKey });
+    });
+
     it("returns failure for empty body", () => {
       expect(storageEventSchema.safeParse({}).success).toBeFalsy();
     });
