@@ -198,7 +198,7 @@ This is an owner step, and the app cannot do it. Its token is object-scoped, so 
 
 ### What a missing rule looks like
 
-The upload card says "The upload failed. Please try again." and nothing is promoted, because the failed `PUT` is not the app's to describe (ADR-0014). The reason is in the browser console alone — a CORS error naming the preflight — and the server log shows nothing at all, since the request never reached it. The row already exists, because `POST /api/upload` ran first: after the five-minute presign window the next visit to `/receipts` reconciles it to `error`, which reads as a storage fault and is not one. Check the console before the log.
+The upload card says "The upload failed. Please try again." and nothing is promoted, because the failed `PUT` is not the app's to describe (ADR-0014). The reason is in the browser console alone — a CORS error naming the preflight — and the server log shows nothing at all, since the request never reached it. The row already exists, because `POST /api/upload` ran first: after the settle window (`UPLOAD_SETTLE_SECONDS`, the five-minute presign window plus a grace for a slow `PUT`) the next visit to `/receipts` reconciles it to `error`, which reads as a storage fault and is not one. Check the console before the log.
 
 A CSP report in the console is the quieter version of the same failure: `lib/security/csp.ts` lists the R2 origin in `connect-src`, taken from `STORAGE_PUBLIC_ENDPOINT`, which is why that variable has to be set at build time as well as at runtime.
 

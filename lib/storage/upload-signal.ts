@@ -7,7 +7,7 @@ import type { ProcessingStatus } from "@/lib/db";
 import { reportError } from "@/lib/errors";
 import { inngest } from "@/lib/inngest/client";
 import { BUCKET, objectExists } from "@/lib/storage/client";
-import { PRESIGNED_URL_EXPIRY_SECONDS } from "@/lib/storage/constants";
+import { UPLOAD_SETTLE_SECONDS } from "@/lib/storage/constants";
 
 /**
  * Everything the upload signal needs to know about a receipt. The object key is
@@ -143,8 +143,10 @@ export const promoteVerifiedUpload = async (
 };
 
 /**
- * Settle this owner's stale upload signals: rows older than the presign window
- * that are still `uploading` or already `pending` (ADR-0021).
+ * Settle this owner's stale upload signals: rows older than
+ * `UPLOAD_SETTLE_SECONDS` that are still `uploading` or already `pending`
+ * (ADR-0021). The threshold is the presign window plus a grace, because the
+ * window bounds when a `PUT` may start, not how long it may run.
  *
  * - `uploading`: a `HeadObject` decides. Present → promoted and extraction
  *   starts, so a browser tab that died between the PUT and its call costs the
@@ -186,7 +188,7 @@ export const reconcileStaleUploads = async (
   ownerId: string,
   now: Date = new Date()
 ): Promise<void> => {
-  const before = new Date(now.getTime() - PRESIGNED_URL_EXPIRY_SECONDS * 1000);
+  const before = new Date(now.getTime() - UPLOAD_SETTLE_SECONDS * 1000);
 
   for (const receipt of await listStaleUploadSignalReceipts(ownerId, before)) {
     // Sequential on purpose: a page visit normally has no stale rows, so the

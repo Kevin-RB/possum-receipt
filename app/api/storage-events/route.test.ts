@@ -392,7 +392,7 @@ describe("POST /api/storage-events", () => {
       );
     });
 
-    it.each(["processing", "done", "error"])(
+    it.each(["processing", "done"])(
       "ignores a %s receipt without enqueuing anything",
       async (status) => {
         mockFindReceiptByIdForOwner.mockResolvedValue({
@@ -408,6 +408,26 @@ describe("POST /api/storage-events", () => {
         expect(mockSend).not.toHaveBeenCalled();
       }
     );
+
+    it("refuses an error receipt, which nothing will ever extract", async () => {
+      // Reconciliation can reach `error` before this call arrives: a slow PUT
+      // started just inside the presign window can finish after `/receipts`
+      // settled the row. Success here would tell the card the upload arrived.
+      mockFindReceiptByIdForOwner.mockResolvedValue({
+        ...uploadingReceipt,
+        status: "error",
+      });
+
+      const res = await uploadSignal(uploadingReceipt.id);
+
+      expect(res.status).toBe(409);
+      await expect(res.json()).resolves.toStrictEqual({
+        error: USER_ERROR.uploadFailed,
+      });
+      expect(mockObjectExists).not.toHaveBeenCalled();
+      expect(mockUpdateSet).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
 
     it("returns 500 when the enqueue fails after promotion", async () => {
       mockSend.mockRejectedValue(new Error("inngest unavailable"));

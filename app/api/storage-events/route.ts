@@ -208,10 +208,22 @@ const handleUploadSignal = async (request: Request) => {
     return NextResponse.json({ received: true });
   }
 
-  // processing/done/error: the receipt is past the upload, so a repeat call is
-  // a no-op rather than a second extraction.
-  if (receipt.status !== "uploading") {
+  // processing/done: the receipt is past the upload, so a repeat call is a
+  // no-op rather than a second extraction.
+  if (receipt.status !== "error" && receipt.status !== "uploading") {
     return NextResponse.json({ received: true });
+  }
+
+  // `error` can be reached before this call arrives: reconciliation runs on
+  // `/receipts`, and a slow PUT started just inside the presign window can
+  // finish after that page settled the row. Nothing will extract it, so it must
+  // not read as success to the card — the reader is told the upload failed and
+  // can try again.
+  if (receipt.status === "error") {
+    return NextResponse.json(
+      { error: USER_ERROR.uploadFailed },
+      { status: 409 }
+    );
   }
 
   try {

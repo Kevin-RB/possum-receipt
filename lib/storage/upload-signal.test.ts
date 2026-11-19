@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PRESIGNED_URL_EXPIRY_SECONDS } from "./constants";
+import { UPLOAD_SETTLE_SECONDS } from "./constants";
 
 const NOW = new Date("2026-11-20T10:00:00.000Z");
 
@@ -173,12 +173,12 @@ describe("reconcileStaleUploads", () => {
     vi.restoreAllMocks();
   });
 
-  it("only asks for this owner's unsettled rows older than the presign window", async () => {
+  it("only asks for this owner's unsettled rows past the settle window", async () => {
     await reconcileStaleUploads("user-1", NOW);
 
     expect(mockListStaleUploadSignalReceipts).toHaveBeenCalledExactlyOnceWith(
       "user-1",
-      new Date(NOW.getTime() - PRESIGNED_URL_EXPIRY_SECONDS * 1000)
+      new Date(NOW.getTime() - UPLOAD_SETTLE_SECONDS * 1000)
     );
   });
 
