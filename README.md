@@ -103,7 +103,7 @@ Two boundaries are worth calling out, because they are the reason the pipeline i
 1. **Compress.** The browser downscales the chosen photo to a 2000px longest edge and re-encodes it as JPEG (`lib/images/compress-receipt-image.ts`). EXIF orientation is baked in, so phone photos do not land sideways.
 2. **Request an upload slot.** `POST /api/upload` validates the declared content type and size, inserts a receipt row with `status = 'uploading'` and an object key namespaced `users/<userId>/<uuid>.<ext>`, and returns a presigned PUT URL.
 3. **Upload.** The browser PUTs the bytes straight to RustFS. Storage credentials never leave the server.
-4. **Notification.** RustFS POSTs a bucket event to `/api/storage-events`, authenticated by the shared secret. The handler promotes the row `uploading → pending` and sends `receipt/uploaded` with a deterministic event id, so redelivery is deduped by Inngest rather than starting a second run. A non-2xx makes RustFS retry, and the retry re-enqueues instead of losing the extraction.
+4. **Notification.** RustFS POSTs a bucket notification to `/api/storage-events`, authenticated by the shared secret. The handler reads only the app's own storage event, and an adapter per provider (RustFS, R2) turns the payload into it, picked by its shape. The handler promotes the row `uploading → pending` and sends `receipt/uploaded` with a deterministic event id, so redelivery is deduped by Inngest rather than starting a second run. A non-2xx makes RustFS retry, and the retry re-enqueues instead of losing the extraction.
 5. **Extract.** `transcribe-receipt` claims the row (`pending → processing`), downloads the image, and OCRs it with the vision model. The transcript is written as soon as it exists — if parsing then fails, it is the only evidence of what the image said. Next the transcript is parsed into the fixed extraction contract (`lib/db/contract.ts`) and validated against it, and in a final step the flat receipt fields, the line items, and the integrity warning are written and the row marked `done`. The warning is raised when the line items do not reconcile against the stated total.
 6. **Categorize.** Extraction emits `receipt/extracted`; `categorize-receipt` loads the line items and the seeded leaf taxonomy, asks the model for one category per item, writes the assignments, and stamps `categorized_at`. Because the taxonomy is a derived layer, a re-run reapplies it to every item whose `category_source` is `ai`; an item the owner categorised by hand is `user` and is skipped, because that is a decision rather than a draft (see [ADR-0010](docs/adr/0010-user-set-categories-are-decisions.md)).
 7. **Notify the UI.** Throughout, the function publishes `extracting` / `parsing` / `storing` / `done` / `failed` on the owner's realtime channel, carrying the receipt id so the table can route each message to its row.
@@ -235,7 +235,7 @@ app/
   (app)/               chat (/), /receipts, /receipts/[id], /overview
   api/
     upload/            create a row + presign, and retry a stuck upload
-    storage-events/    RustFS bucket notification
+    storage-events/    receive bucket notifications as the app's own storage event
     receipts/[id]/image/  serve the image (presigned GET)
     chat/              agent stream
     inngest/           function registry for the dev server
@@ -249,7 +249,7 @@ lib/
   images/              browser-side compression
   inngest/             client, channels, functions
   receipt/             integrity, line-item money, datetime
-  storage/             S3 client, content types, event schema
+  storage/             S3 client, content types, storage-event adapters
 docs/adr/              architecture decision records
 scripts/               backfill, fixtures, deploy wait, LM Studio check, production boot
 ```
@@ -279,3 +279,4 @@ Backups are configured per environment in the Coolify UI: a volume backup of `po
   - `0006` migrate object storage to RustFS
   - `0008` persist the OCR transcript
   - `0009` categories are derived and re-runnable
+  - `0020` storage events go through app-owned adapters

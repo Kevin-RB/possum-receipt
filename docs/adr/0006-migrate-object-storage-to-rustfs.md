@@ -6,7 +6,7 @@ Issue: #100
 
 ## Status
 
-Accepted
+Accepted. The event schema is superseded by ADR-0020 (2026-11-19).
 
 ## Context
 
@@ -22,7 +22,7 @@ RustFS is a MinIO-compatible object store (S3 API, bucket notifications, bundled
 - **Single-node only.** Distributed mode is still under test upstream; one mini, one node. This is a deliberate limitation, not an oversight.
 - **Move by volume copy, not by object copy.** The spike proved the single-node on-disk format is interchangeable in both directions between MinIO and RustFS (see Evidence), so no object-level migration is needed. Coolify names compose volumes `<resource-uuid>_<volume>`, and this change also _renames_ the volume, so cutover is: snapshot the old volume, copy its contents into a new `<resource-uuid>_rustfs-data` volume, `chown -R 10001:10001`, then start RustFS on it.
 - **Rename the storage layer to be vendor-neutral.** `lib/minio/` → `lib/storage/`, the `MINIO_*` env vars → `STORAGE_*`, the webhook route `/api/minio-events` → `/api/storage-events`, and the DB column `minio_object_key` → `object_key`. Misleading names are a maintenance cost once MinIO is gone.
-- **Rewrite the event parser** for RustFS's envelope and replace the MinIO fixture with a captured RustFS payload (contract tests included). The current strict MinIO schema rejects RustFS events.
+- **Rewrite the event parser** for RustFS's envelope and replace the MinIO fixture with a captured RustFS payload (contract tests included). The current strict MinIO schema rejects RustFS events. (Superseded by ADR-0020: the parser is now the RustFS adapter behind an app-owned storage event; see the 2026-11-19 update below.)
 - **Run the app as a least-privilege IAM identity, not root.** RustFS's root account bypasses IAM policy evaluation, so the app authenticates as an IAM user (`receipts-app`) scoped to `s3:GetObject`/`s3:PutObject`/`s3:DeleteObject` on the bucket only — the exact actions it uses (presigned PUT, image reads, receipt deletion). The init job creates the policy, user, and binding idempotently; root credentials are used only by the init job and the console. This bounds a compromised app or a code bug to the receipts bucket rather than full storage admin.
 - **Namespace object keys by owner** (`users/<userId>/<uuid>.<ext>`). The bucket stays single and shared — one notification rule, one policy — and the app enforces ownership on every read; the prefix adds defence in depth, makes ownership obvious at the storage layer, and turns per-user export/erasure/lifecycle into a prefix operation. Pre-existing unprefixed keys remain valid.
 
@@ -38,7 +38,7 @@ Run in a scratch compose outside the repo. All proofs green on `1.0.0-rc.6`:
 
 ## Consequences
 
-- **Payload differences drive the parser rewrite.** RustFS's `requestParameters` is the raw request-header map (no `region`, no `sourceIPAddress`) and `responseElements` lacks MinIO's `x-minio-*` keys, so the current strict schema rejects it. The fields the server uses — `Records[].s3.object.key` and `eventName` — are present and stable, so the schema becomes `z.looseObject` and requires only what the consumer reads. RustFS also percent-encodes the key (slashes become `%2F`), so the schema decodes it with `decodeURIComponent` before use; without that, keys under the `users/<userId>/` prefix never match the stored row and no extraction is triggered.
+- **Payload differences drive the parser rewrite.** RustFS's `requestParameters` is the raw request-header map (no `region`, no `sourceIPAddress`) and `responseElements` lacks MinIO's `x-minio-*` keys, so the current strict schema rejects it. The fields the server uses — `Records[].s3.object.key` and `eventName` — are present and stable, so the schema becomes `z.looseObject` and requires only what the consumer reads. RustFS also percent-encodes the key (slashes become `%2F`), so the schema decodes it with `decodeURIComponent` before use; without that, keys under the `users/<userId>/` prefix never match the stored row and no extraction is triggered. (Superseded by ADR-0020: both rules now live in the RustFS adapter; see the 2026-11-19 update below.)
 - **Notification config differs.** The ARN becomes `arn:rustfs:sqs:us-east-1:primary:webhook`; `RUSTFS_NOTIFY_ENABLE=true` is required in addition to the per-target `_PRIMARY` variables; and the webhook target's queue directory must live **outside** the data volume, or it shows up as a phantom bucket. The init job registers `--event put` (which expands to `s3:ObjectCreated:*`, covering single PUT and multipart completion); delete events are dropped because the app never consumes them. `rc bucket event add` replaces the rule for its ARN, so it runs unconditionally every deploy rather than being guarded.
 - **Reusing a MinIO data volume carries stale notification rules.** The copied volume's bucket metadata stores MinIO's own notification config, whose `arn:minio:…` target does not exist in RustFS. An unresolvable rule silently breaks dispatch for the entire bucket — observed at the production cutover: the rule was registered and the target reachable, yet zero events were delivered and nothing queued. `rustfs-init` now removes the known MinIO webhook ARN before adding the RustFS rule; a fresh volume (as on staging) never has this.
 - **CORS is server-level and comma-separated** (`RUSTFS_CORS_ALLOWED_ORIGINS`), replacing MinIO's single `MINIO_API_CORS_ALLOW_ORIGIN`. Two origins are allowed: the app's browser origin (`STORAGE_CORS_ORIGIN`, required) and the console's — derived from `STORAGE_CONSOLE_HOST` + `STORAGE_CONSOLE_HOST_PORT` so the port is defined only once — with a missing app origin failing `docker compose config` instead of silently breaking uploads. The console listener's own CORS (`RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS`, default `*`) is pinned to the same derived origin; direct console access is same-origin and unaffected, so this only removes a blanket cross-origin allowance.
@@ -66,9 +66,16 @@ What we actually do:
 
 If a pre-RustFS revision ever had to run again (not planned), an operator must restore the old column name by hand first — `ALTER TABLE receipts RENAME COLUMN object_key TO minio_object_key;` — because Drizzle's migrations are forward-only and will not do it.
 
+## Update (2026-11-19): the event schema becomes one adapter among several
+
+The parser rewrite above produced a schema shaped by RustFS's envelope, which made RustFS's format the app's format. The app now defines its own storage event — an object finished uploading, named by its object key — and each provider has an adapter that produces one (ADR-0020). The RustFS adapter keeps both rules recorded here: loose objects, and a percent-decoded key.
+
+Only the event schema changes. RustFS still serves local development, and it still serves production until the move off the Mac mini (issue #240) lands; retiring it there is that deployment's decision, recorded in its own ADR (#251) when it lands, not by this update.
+
 ## Related
 
 - Issue #100 (evaluate and migrate object storage)
 - ADR-0001 (upload via presigned URL and bucket notification)
 - ADR-0005 (Coolify deployment on the Mac mini)
+- ADR-0020 (the app owns its storage-event format) — supersedes the event schema above
 - PR #97 (Chainguard MinIO stopgap)
