@@ -20,6 +20,10 @@ Go to **R2 object storage → Overview → Account Details → Manage (API Token
 - **Specify bucket:** **`receipts`** — this bucket only, not all buckets. This is what keeps the token away from `receipts-backups` when it exists, and from every other bucket in the account.
 - **TTL:** leave the default unless you intend to rotate the token. If you do set an expiry, diarise it: when the token expires, uploads and image reads stop with it.
 
+Nothing beyond object access is needed. R2's event notifications require the Workers Paid plan, and this design deliberately does not use them: the app learns that an upload finished from one authenticated call the browser makes after its successful `PUT`, verified server-side, with a page-load reconciliation as the safety net (ADR-0020). So there is no Queue to administer and no reason to grant more than `Object Read & Write` on `receipts`.
+
+Managing bucket configuration later is a separate permission, not this token's. Bucket locks and lifecycle rules on the backups bucket ([#253](https://github.com/Kevin-RB/possum-receipt/issues/253)) need a token with **R2 Storage Write** configuration permission, which can be that bucket's own token, created with it. Leave this one object-only rather than growing permissions it does not use.
+
 Press **Create Account API token**, then copy both values, because they are all you get:
 
 - **Access Key ID**
@@ -118,15 +122,17 @@ Done when the answers are `75` and `16871113`. `ListObjectsV2` returns up to 100
 
 ### Confirm the bucket is not public
 
-An unsigned request must be refused:
+The check is the dashboard, not the S3 endpoint: **R2 object storage → receipts → Settings → Public access** must list no `r2.dev` URL and no custom domain. If an `r2.dev` URL is there, public access is on and has to be turned off — that host serves every receipt image to anyone holding the link.
+
+A curl at the private endpoint proves nothing about this. A request to `https://<account>.r2.cloudflarestorage.com/<bucket>/<key>` answers `403` whether or not a public URL exists, because public access is served from a separate `r2.dev` host or custom domain, never from the S3 API host:
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' "$R2_ENDPOINT/receipts/$KEY"
 ```
 
-Done when the answer is `403`. That is what private means on the S3 API.
+That `403` proves only that unsigned S3 requests are refused, which is a different property.
 
-Then check the dashboard itself: **R2 object storage → receipts → Settings → Public access** must list no `r2.dev` URL and no custom domain. If an `r2.dev` URL is there, public access is on and has to be turned off; with it off, no such host exists, so a request to `https://pub-<HASH>.r2.dev/$KEY` fails before it reaches Cloudflare. A `200` from that URL means every receipt image is readable by anyone with the link.
+If public access is on, `https://pub-<HASH>.r2.dev/$KEY` answers `200`, and every receipt image is readable by anyone with the link.
 
 ### Confirm the token is scoped to `receipts`
 
