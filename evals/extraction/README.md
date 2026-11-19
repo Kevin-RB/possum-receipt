@@ -39,7 +39,7 @@ tokens, latency) so a failed attempt is still counted and still costed. A spend
 guard stops before a call could take the session past US$1. It also runs a
 smoke test first and refuses the matrix if the model cannot be reached.
 
-`output: runs.json` is keyed by variant, then receipt id (`categorization` for
+`runs.json` is keyed by variant, then receipt id (`categorization` for
 D), and keeps each extraction, its transcript, the parsed scores and the calls.
 It is rewritten after every run, so a crash keeps what was already paid for.
 
@@ -49,12 +49,15 @@ Answers "what would these runs have scored against a different key?" without
 spending anything.
 
 ```sh
-pnpm exec tsx ./evals/extraction/rescore.ts \
+pnpm eval:extraction:rescore \
   --runs <dir>/runs.json \
   --golden <key.json> \
   --out <dir> \
   [--label <name>] [--categorization <file>] [--compare <summary.json>]
 ```
+
+(`pnpm exec tsx ./evals/extraction/rescore.ts …` is the same command without the
+script alias.)
 
 - `--runs` is a `runs.json` from `run.ts`.
 - `--golden` is the key to score it against: either a bare array (what
