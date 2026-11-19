@@ -79,10 +79,11 @@ export const listExtractionModels = async () => {
  * `pending` or `processing` with nothing behind it, and no other path in the app
  * moves it — so the claim has to expire, or the receipt is a dead end.
  *
- * Generous on purpose. A local extraction runs for six to ten minutes, and
- * taking a claim that is genuinely still running produces two runs against one
- * receipt; waiting longer costs the owner a cooldown, taking it too early costs
- * them their data.
+ * Generous on purpose. A run is seconds now that extraction is one remote call
+ * (ADR-0022), but the lease also covers the queue: a receipt can sit `pending`
+ * for as long as the runs ahead of it take, and taking a claim that is genuinely
+ * still running produces two runs against one receipt. Waiting longer costs the
+ * owner a cooldown; taking it too early costs them their data.
  */
 const PROCESSING_LEASE_MS = 30 * 60 * 1000;
 

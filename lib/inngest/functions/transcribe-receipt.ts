@@ -92,6 +92,10 @@ export const statusAfterFailedRun = (
 export const transcribeReceipt = inngest.createFunction(
   {
     concurrency: [
+      // Two at a time per owner, two per account. Sized to what one person can
+      // usefully upload at once, now that a call is seconds rather than a GPU
+      // job: the cap exists to keep a burst from becoming a provider
+      // rate-limit cascade, not to share one machine's engine (ADR-0022).
       {
         key: "event.data.userId",
         limit: 2,
