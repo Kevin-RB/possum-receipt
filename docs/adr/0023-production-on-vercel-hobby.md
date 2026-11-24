@@ -52,6 +52,14 @@ The rescue (#248, #249) already restored the data elsewhere: 74 receipts and the
 - **The Coolify compose file, the Dockerfile targets and the mini's documentation are #254's to delete.** This ADR covers serving; it does not claim the old files are already gone.
 - **Uploads are not part of this change.** R2 presigned PUTs, the browser's upload-finished call and the bucket's CORS are #252. Until they land, production can read the restored corpus but not accept a new receipt.
 
+## Update (2026-11-24)
+
+Two things this ADR deferred or scoped forward have landed, and one consequence bullet described a conditional that no longer exists.
+
+- **`output: "standalone"` is gone, not conditional.** The Consequences bullet said the conditional disappears with the Docker targets, and it has: `next.config.ts` no longer sets `output` at all, because the Docker `runner` target was its only consumer and nothing builds an image now. The reason it must not be reintroduced is unchanged — on Next 16.3 the standalone finalizer reads `.next/next-server.js.nft.json`, which the adapter Vercel injects stops Next from writing, so a Vercel build would die in `onBuildComplete` with ENOENT.
+- **The old stack's files are deleted.** `docker-compose.coolify.yml`, the Dockerfile and its `runner`/`migrator`/`toolbox` targets, and the Coolify-only scripts are out of the repo (#254), so "the Coolify compose file, the Dockerfile targets and the mini's documentation are #254's to delete" is history rather than a pending task. `docker-compose.yml` — Postgres, RustFS and the Inngest dev server — is local development's, and stays.
+- **Uploads are part of this deployment now.** The bullet that scoped them to #252 is spent: the browser confirms the `PUT` with one authenticated call, the server verifies the object with `HeadObject` before promoting the row, and `/receipts` reconciles a lost confirmation on the next visit (ADR-0021). The one prerequisite the app cannot set for itself is the bucket's CORS rule allowing `https://receipts.tribi.dev` with `PUT` and `content-type` — see `docs/guides/r2-bucket-and-token.md` §5.
+
 ## Related
 
 - Issue [#240](https://github.com/Kevin-RB/possum-receipt/issues/240) — the hosting map, and its two decision comments.

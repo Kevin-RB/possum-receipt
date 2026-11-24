@@ -12,7 +12,7 @@ The app sent no security headers of its own. Cloudflare is its only public ingre
 
 The threat these headers address is not the owner's network. The home network is closed and the Mac mini is reachable only through the Cloudflare tunnel. The exposed hop is the **reader's**: the network between a browser and Cloudflare — a café, hotel or airport wifi — which neither the home network nor Cloudflare controls. An attacker there can intercept a plain-`http` request before Cloudflare ever sees it, and can only exploit a page that runs a script it should not.
 
-The CSP has a constraint of its own. It needs a fresh nonce per request (Next stamps it onto its own inline scripts, and `next-themes` renders one Next does not stamp) and the deployment's storage origin, which the Docker build does not have (`STORAGE_PUBLIC_ENDPOINT` is a runtime variable). So it cannot be a static header in `next.config.ts`.
+The CSP has a constraint of its own. It needs a fresh nonce per request — Next stamps it onto its own inline scripts, and `next-themes` renders one Next does not stamp — so it cannot be a static header in `next.config.ts`. It also names the deployment's storage origin, read from `STORAGE_PUBLIC_ENDPOINT`; because `proxy.ts` is compiled for the edge, that value is inlined at build time, so the variable has to be in the Build scope and not only at runtime.
 
 ## Decision
 

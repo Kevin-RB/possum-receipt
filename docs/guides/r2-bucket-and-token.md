@@ -31,7 +31,7 @@ Press **Create Account API token**, then copy both values, because they are all 
 
 The same screen shows the **Account ID**, which the endpoint needs: `https://<account-id>.r2.cloudflarestorage.com`.
 
-One token serves both the app (uploads, downloads, deletes) and this restore. There is no second credential to create.
+One token serves the app: uploads, downloads and deletes. There is no second credential to create.
 
 Cloudflare's reference for the token screen and its permissions is <https://developers.cloudflare.com/r2/api/tokens/>.
 
