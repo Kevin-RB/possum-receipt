@@ -4,7 +4,7 @@ Date: 2026-08-29
 
 ## Status
 
-Accepted
+Superseded by ADR-0023 (2026-11-19). This is the historical record of the deployment it replaced: the app, database and object store now run on Vercel, Neon and Cloudflare R2. Nothing here describes the current setup.
 
 ## Context
 

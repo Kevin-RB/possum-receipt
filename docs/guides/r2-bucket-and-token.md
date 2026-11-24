@@ -1,6 +1,6 @@
 # Create the R2 bucket and API token
 
-Production receipt images are moving off the Mac mini's self-hosted RustFS bucket and into Cloudflare R2 ([issue #240](https://github.com/Kevin-RB/possum-receipt/issues/240)). This guide creates the bucket, mints the single token that both the app and the restore use, and records where the credentials live. It is a dashboard job of about ten minutes; nothing here touches code.
+Production receipt images live in a private **Cloudflare R2** bucket, not the RustFS container local development uses ([issue #240](https://github.com/Kevin-RB/possum-receipt/issues/240)). This guide creates the bucket, mints the single token the app uses, and records where the credentials live. It is a dashboard job of about ten minutes; nothing here touches code.
 
 The bucket is private and holds every rescued production receipt image: 75 objects under `users/<ownerId>/<uuid>.jpg`, about 16.1 MB. R2 is reached over the plain S3 API, which `lib/storage/client.ts` already speaks — `@aws-sdk/client-s3`, `forcePathStyle: true`, `region: "us-east-1"` — so the app does not need to know it is talking to R2 rather than RustFS.
 
