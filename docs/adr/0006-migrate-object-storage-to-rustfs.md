@@ -6,7 +6,7 @@ Issue: #100
 
 ## Status
 
-Accepted. The event schema is superseded by ADR-0020 (2026-11-19).
+Accepted, for local development only. Superseded for production storage by ADR-0023 (2026-11-19): production images live in Cloudflare R2, while RustFS stays the object store `docker compose up` provides. The event schema is superseded by ADR-0020 (2026-11-19).
 
 ## Context
 

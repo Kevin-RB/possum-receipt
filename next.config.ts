@@ -3,19 +3,13 @@ import type { NextConfig } from "next";
 const isProduction = process.env.NODE_ENV === "production";
 
 /**
- * `output: "standalone"` is the Docker image's format (`runner` copies
- * `.next/standalone`), and it must not be set on Vercel: Next 16.3's standalone
- * finalizer reads `.next/next-server.js.nft.json`, which the deployment adapter
- * Vercel injects stops Next from writing, so the build dies in
- * `onBuildComplete` with ENOENT. The fix is on canary only (16.4.0), not
- * backported to 16.3.x, and Vercel does not use standalone output anyway —
- * vercel/next.js#96646.
- *
- * `VERCEL` is set on every Vercel build, including a local `vercel build`.
+ * `output` is deliberately unset. It used to be `"standalone"` for the Docker
+ * `runner` target, which no longer exists; and it must not be reintroduced for
+ * Vercel, where Next 16.3's standalone finalizer reads
+ * `.next/next-server.js.nft.json` — a file the deployment adapter Vercel
+ * injects stops Next from writing — so every build would die in
+ * `onBuildComplete` with ENOENT (vercel/next.js#96646).
  */
-const standaloneForDockerOnly: "standalone" | undefined = process.env.VERCEL
-  ? undefined
-  : "standalone";
 
 /**
  * Headers that do not depend on the environment. The Content-Security-Policy is
@@ -54,7 +48,6 @@ const nextConfig: NextConfig = {
       source: "/:path*",
     },
   ],
-  output: standaloneForDockerOnly,
 };
 
 export default nextConfig;

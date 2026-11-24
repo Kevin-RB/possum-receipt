@@ -34,8 +34,8 @@ export interface FixtureOptions {
  * Writing fixture rows is a development action, so the command runs only where
  * it can vouch for the environment. `NODE_ENV=production` is the case the
  * ticket names; an unset `NODE_ENV` is refused for the same reason — a deployed
- * container (the `toolbox` in AGENTS.md, for instance) sets neither, and would
- * otherwise point this at the real `DATABASE_URL`.
+ * container sets neither, and would otherwise point this at the real
+ * `DATABASE_URL`.
  */
 export const assertFixtureEnvironment = (
   env: { NODE_ENV?: string | undefined } = process.env

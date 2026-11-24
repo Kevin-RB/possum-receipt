@@ -2,7 +2,7 @@
   "name": "receipt-app",
   "version": "1.0.0",
   "private": true,
-  "description": "Local-first receipt AI analyser — single Next.js app with services in Docker compose.",
+  "description": "Receipt AI analyser — a single Next.js app (Vercel, Neon, R2) with the backing services in Docker for local development.",
   "keywords": [],
   "license": "ISC",
   "author": "",

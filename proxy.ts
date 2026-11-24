@@ -8,10 +8,12 @@ const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up"]);
 
 /**
  * Resolved the same way `lib/storage/client.ts` resolves it, because the policy
- * has to name the host the presigned URL actually uses. Reading it per request
- * — not in `next.config.ts` — is what makes the production policy correct: the
- * Docker build has no `STORAGE_PUBLIC_ENDPOINT`, so a config-time policy would
- * silently ship without the storage origin.
+ * has to name the host the presigned URL actually uses. The CSP is built per
+ * request for the nonce; this origin comes along with it, and `proxy.ts` is
+ * compiled for the edge, so `STORAGE_PUBLIC_ENDPOINT` is inlined at build time.
+ * That is why the variable must be in the Build scope and not only at runtime:
+ * a deployment missing it there reports against a policy with no storage origin
+ * while the app itself keeps working (ADR-0019).
  */
 const storageEndpoint = () =>
   process.env.STORAGE_PUBLIC_ENDPOINT ??

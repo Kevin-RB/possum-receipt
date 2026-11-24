@@ -44,6 +44,10 @@ The fixture's guarantees:
 - The anchor date moves from day to day, so a fresh run on a later day dates the corpus differently. Ids do not move (they hash the seed, email and name), which is what keeps the second run a no-op; determinism of the data itself is asserted at the generator seam with an explicit `asOf`, not against a fixed wall clock.
 - CI does not run the fixture: it needs neither RustFS nor LM Studio, but it does need a migrated Postgres, which the unit suite deliberately does not require. The DB-writing half lives in `lib/db/fixture-provision.ts` with an optional Postgres-backed integration test behind `FIXTURE_TEST_DATABASE_URL`; `pnpm test` skips it, and it refuses a database whose name does not contain `test` or `fixture`.
 
+## Update (2026-11-24)
+
+The rule stands; one example in it no longer exists. Point 6 refuses an unset `NODE_ENV` because a process that sets neither it nor any other environment marker could be pointed at the real `DATABASE_URL`, and it named the Coolify `toolbox` container as that case. The `toolbox` went with the Coolify stack (#254), so the example becomes the class it stood for: a bare container, a CI runner, or any shell that exports `DATABASE_URL` without a `NODE_ENV`. `lib/db/fixture-args.ts` carries the comment without the retired name.
+
 ## Related
 
 - ADR-0004 — demo data and the `receipts_seed` boundary; this ADR is the documented exception for fixtures.

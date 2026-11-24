@@ -1,6 +1,6 @@
 # possum
 
-A local-first web app that turns photos of paper receipts into structured, persisted data. The user uploads an image, a durable workflow reads it into a fixed contract with the receipt's text kept alongside, and the result is stored alongside the receipt image.
+A web app that turns photos of paper receipts into structured, persisted data. The user uploads an image, a durable workflow sends it to a model that reads it into a fixed contract with the receipt's text kept alongside, and the result is stored alongside the receipt image. In production it is a serverless deployment — Vercel functions in `syd1`, Neon for Postgres, Cloudflare R2 for the images (ADR-0023); in local development the app runs on the host with the backing services in Docker.
 
 ## Language
 
